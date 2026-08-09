@@ -10,7 +10,7 @@ about this yesterday?"*
 This repository is the whole stack: the BLE protocol, the SDK, the host apps, and
 everything you need to build on it or run it yourself.
 
-**[engram.glass](https://engram.glass) · [Preorder — $249](https://engram.glass#buy)**
+**[engram-swart-nu.vercel.app](https://engram-swart-nu.vercel.app) · [Preorder — $249](https://engram-swart-nu.vercel.app#buy)**
 
 ---
 
@@ -163,4 +163,4 @@ implementation, written from the published protocol documentation.
 
 ---
 
-Built by [UU Lab](https://engram.glass), a trade name of Jappuie Inc., Québec.
+Built by [UU Lab](https://engram-swart-nu.vercel.app), a trade name of Jappuie Inc., Québec.
