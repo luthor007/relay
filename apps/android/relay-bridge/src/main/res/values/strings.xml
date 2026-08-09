@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      Notification copy. Written from the wearer's side and, more importantly,
+      never vaguer than the truth: if the glasses are recording while the phone
+      is out of range, it says so, because "Relay is running" would hide exactly
+      the state a person most needs to know about.
+    -->
+
+    <string name="relay_channel_name">Capture</string>
+    <string name="relay_channel_description">
+        Shows whether your glasses are connected and recording. Always visible while capture is on.
+    </string>
+    <string name="relay_service_description">
+        Keeps your glasses connected so capture continues when the app is closed.
+    </string>
+
+    <string name="relay_title_recording">Recording your day</string>
+    <string name="relay_title_connected">Glasses connected</string>
+    <string name="relay_title_connecting">Connecting to your glasses…</string>
+    <string name="relay_title_reconnecting">Reconnecting…</string>
+    <string name="relay_title_idle">Capture off</string>
+
+    <string name="relay_detail_recording_offline">
+        Recording on the glasses — will sync when they reconnect
+    </string>
+    <string name="relay_detail_not_worn">Put them on to start capturing</string>
+    <string name="relay_detail_default">Ready</string>
+
+    <string name="relay_action_stop">Stop</string>
+
+</resources>

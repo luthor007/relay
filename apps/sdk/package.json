@@ -1,7 +1,7 @@
 {
-  "name": "@engram/sdk",
+  "name": "@relay/sdk",
   "version": "0.1.0",
-  "description": "Build apps for Engram One. Apps run on the user's own box, not yours.",
+  "description": "Build apps for Relay One. Apps run on the user's own box, not yours.",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

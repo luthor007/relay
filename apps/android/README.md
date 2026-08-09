@@ -1,13 +1,13 @@
-# Android — `engram-bridge`
+# Android — `relay-bridge`
 
 The always-on half of the Android host app. This is the piece the vendor SDK
 does not provide at all: their sample is Activity-only, with **zero `<service>`
 declarations**, so capture stops the moment the user switches apps.
 
 ```
-engram-bridge/
+relay-bridge/
   AndroidManifest.xml            typed FGS + the permissions API 34 requires
-  EngramCaptureService.kt        the foreground service
+  RelayCaptureService.kt        the foreground service
   ConnectionSupervisor.kt        reconnect, heartbeat, wear→capture rules
   CaptureNotifications.kt        the standing recording indicator
   BootReceiver.kt                restart after reboot, if the user had it on
@@ -32,7 +32,7 @@ written and ready in `src/test/`.
 **Typed foreground services.** From API 34 a service must declare its type *and*
 hold the matching permission, and `microphone` additionally requires
 `RECORD_AUDIO` to be granted *before* `startForeground` is called. Getting it
-wrong throws rather than degrading, so `EngramCaptureService.missingPermissions`
+wrong throws rather than degrading, so `RelayCaptureService.missingPermissions`
 is checked first and the service refuses to start rather than crashing.
 
 **`START_STICKY` is not enough.** Several OEM skins kill background work

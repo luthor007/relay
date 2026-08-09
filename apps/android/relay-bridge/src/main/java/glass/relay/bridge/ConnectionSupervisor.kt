@@ -1,4 +1,4 @@
-package glass.engram.bridge
+package glass.relay.bridge
 
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
@@ -167,7 +167,7 @@ class ConnectionSupervisor(
     }
 
     internal companion object {
-        private const val TAG = "EngramSupervisor"
+        private const val TAG = "RelaySupervisor"
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
         private const val BASE_BACKOFF_MS = 1_000L
         private const val MAX_BACKOFF_MS = 30_000L

@@ -1,7 +1,7 @@
 /**
- * @engram/sdk — build apps for Engram One.
+ * @relay/sdk — build apps for Relay One.
  *
- *     import { defineApp } from "@engram/sdk";
+ *     import { defineApp } from "@relay/sdk";
  *
  *     export default defineApp({
  *       async onTrigger(ctx) {

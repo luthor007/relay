@@ -1,4 +1,4 @@
-package glass.engram.bridge
+package glass.relay.bridge
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest

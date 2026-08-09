@@ -1,5 +1,5 @@
 /**
- * The app manifest — `engram.json`.
+ * The app manifest — `relay.json`.
  *
  * Read by the runtime before any app code runs, so it is the only place a
  * capability can be requested. Anything not declared here is not mintable at
@@ -87,7 +87,7 @@ const SEMVER_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 const VALID_SCOPES = new Set<string>(Object.values(PermissionScope));
 
 /**
- * Validate a parsed `engram.json`.
+ * Validate a parsed `relay.json`.
  *
  * Strict, and strict early: a manifest that half-parses installs an app with
  * permissions nobody reviewed.

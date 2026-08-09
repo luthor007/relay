@@ -51,10 +51,10 @@
     <application>
 
         <service
-            android:name=".EngramCaptureService"
+            android:name=".RelayCaptureService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|microphone"
-            android:description="@string/engram_service_description" />
+            android:description="@string/relay_service_description" />
 
         <receiver
             android:name=".BootReceiver"

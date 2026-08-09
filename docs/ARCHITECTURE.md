@@ -245,6 +245,102 @@ Reaching for immediate BLE delivery by default is the mistake: it spends tens of
 seconds transferring an image that could have ridden the nightly sync at full
 resolution for nothing. Photos split exactly the way audio does.
 
+### 5.2b Voice — wake words and speech
+
+**Wake words are firmware, not software.** `0x0F01` 获取语音唤醒功能列表 returns a
+list the firmware was built with — `Index, Type, Len, Value`, where Type 0 is an
+AI wake phrase, 1 a Bluetooth control, 2 a device control. `0x0F02`/`0x0F03` read
+and set which entries are active. There is no command that accepts a new phrase,
+because the spotter is a trained model running on the device's DSP.
+
+The spec's own worked example lists the AI wake phrase as **`"hey chatgpt"`**.
+Assume stock units ship with that until measured.
+
+So a per-user custom phrase ("Hey Jarvis") has three possible routes, and only
+one of them is free:
+
+| Route | Gives | Costs |
+|---|---|---|
+| **Tap to talk** | works today, zero battery, zero latency | not hands-free |
+| Supplier firmware build | one branded phrase on every unit | money, lead time, an MOQ, and still not per-user |
+| Phone-side spotter | genuinely per-user phrases | the mic stream must stay open, which is the continuous-BLE cost §5.3 exists to avoid |
+
+Recommendation: **tap-to-talk is the primary trigger.** Let users *name* their
+assistant — what it calls itself, how it signs off, what the app labels it — and
+decouple that from the wake phrase, which stays whatever the firmware supports.
+Naming is the part people actually want; hands-free is the part that costs a
+battery.
+
+**Text to speech is ours to choose and is not chosen yet.** The return path is
+easy — the glasses are a normal Bluetooth audio sink (they do music and calls),
+and `setSpeakerPlaybackStatus` routes output to them — so TTS audio goes
+cloud → phone → A2DP → speaker with no protocol work.
+
+What matters is **time to first audio**, not quality. Past roughly 300 ms a voice
+assistant feels dead, and no amount of naturalness recovers it. So: streaming
+only, and a provider slot rather than a hardcoded vendor, matching how the model
+is already BYO. Candidates worth benchmarking on the real path — Cartesia Sonic,
+ElevenLabs Flash, Deepgram Aura, OpenAI's mini TTS — with the phone's native
+synthesiser (`AVSpeechSynthesizer` / Android `TextToSpeech`) as the offline
+fallback, since it is free, instant and always available.
+
+*Do not take published latency numbers on faith.* Measure round trip on this
+device, over A2DP, from the box — that path has more hops than a vendor's demo.
+
+Speech **in** may be free: the device reports recognised text directly
+(`didReceiveAIChatTextMessage`), so STT may need no provider at all. Confirm on
+hardware; if the on-device recogniser is weak, the audio is already streaming and
+can go to a cloud STT instead.
+
+### 5.2c Can we update the firmware?
+
+**Flash it: yes, fully. Author it: no.**
+
+Everything needed to push a firmware image is documented and implemented. The
+protocol carries `0x0B01`–`0x0B04` (OTA info, version report, start, complete),
+and the iOS SDK exposes a complete DFU state machine — `switchToDFU`,
+`initDFUFirmwareType`, `sendFilePacketData`, `checkMyFirmwareWithData`,
+`finishDFU`, plus `startToBleOTAFirmwareUpdateWithFilePath` and a WiFi variant.
+`QG_DFU_Operation` enumerates the whole opcode set. The SDK even ships a real
+image to practise on: `Resource/A02Q8DP_2.00.04_260415.bin`.
+
+That image is also where the ceiling shows up. Its layout:
+
+| Offset | Contents |
+|---|---|
+| `0x00` | magic `e5c3bd81` |
+| `0x04` | payload length, `1008973` (file is 1009053 — an 80-byte header) |
+| `0x0C` | checksum |
+| `0x10` | `A02Q8DP_2.00.04_260415` |
+| `0x30` | `A02Q8DP_V2.0` |
+| `0x50`+ | payload |
+
+Entropy of the header is 3.59 bits/byte. Entropy of the payload is **8.00** —
+the maximum, indistinguishable from random, with no recoverable strings in a
+megabyte. The payload is encrypted or compressed, and the DFU path almost
+certainly validates that checksum against a key we do not hold.
+
+So the practical position:
+
+- **We can ship firmware the supplier builds for us.** OTA works over BLE and
+  WiFi, and updates can be delivered by URL (`0xFC` OTAFileDownloadLink).
+- **We cannot build firmware ourselves.** No source, no toolchain, opaque
+  payload — and the wake-word spotter is a trained DSP model regardless, which is
+  not something you patch into a binary.
+- **A custom wake phrase is therefore a purchase order, not a commit.** It is a
+  standard ODM request at MOQ, it costs money and lead time, and it yields one
+  phrase across every unit rather than per-user. See §5.2b for why tap-to-talk is
+  the better default anyway.
+
+One thing worth doing on the first order regardless: **ask the supplier to
+remove `"hey chatgpt"`** from the keyword table, or to build a neutral phrase.
+Shipping a product that wakes to a competitor's brand is worse than shipping one
+that only wakes on a tap.
+
+The DFU opcode list also names capabilities absent from this model — head-up
+display, optical-waveguide display settings, teleprompter — which says the SDK
+spans a family of devices. Worth knowing if a display variant ever matters.
+
 ### 5.3 The daily sync — why it rides WiFi, not BLE
 
 The glasses hold **4 GB**, which is 2–23 days of audio depending on the on-device

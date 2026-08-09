@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "glass.engram.bridge"
+    namespace = "glass.relay.bridge"
     compileSdk = 35
 
     defaultConfig {

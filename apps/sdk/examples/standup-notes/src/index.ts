@@ -1,5 +1,5 @@
 /**
- * Standup Notes — a complete Engram app in 60 lines.
+ * Standup Notes — a complete Relay app in 60 lines.
  *
  * Shows the three things that make the platform different:
  *
@@ -12,7 +12,7 @@
  *      the standup" works without the app owning a wake phrase.
  */
 
-import { defineApp } from "@engram/sdk";
+import { defineApp } from "@relay/sdk";
 
 export default defineApp({
   async onTrigger(ctx) {

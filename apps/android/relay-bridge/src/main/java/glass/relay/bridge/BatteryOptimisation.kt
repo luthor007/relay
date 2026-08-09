@@ -1,4 +1,4 @@
-package glass.engram.bridge
+package glass.relay.bridge
 
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -86,38 +86,38 @@ object BatteryOptimisation {
 
     private val KNOWN: Map<String, ManufacturerAdvice> = mapOf(
         "xiaomi" to ManufacturerAdvice(
-            instruction = "Set Engram's battery saver to \"No restrictions\" and enable Autostart.",
+            instruction = "Set Relay's battery saver to \"No restrictions\" and enable Autostart.",
             components = listOf(
                 "com.miui.securitycenter" to "com.miui.permcenter.autostart.AutoStartManagementActivity",
             ),
         ),
         "huawei" to ManufacturerAdvice(
-            instruction = "Add Engram to protected apps so it keeps running when the screen is off.",
+            instruction = "Add Relay to protected apps so it keeps running when the screen is off.",
             components = listOf(
                 "com.huawei.systemmanager" to "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
                 "com.huawei.systemmanager" to "com.huawei.systemmanager.optimize.process.ProtectActivity",
             ),
         ),
         "oppo" to ManufacturerAdvice(
-            instruction = "Allow Engram to run in the background and start automatically.",
+            instruction = "Allow Relay to run in the background and start automatically.",
             components = listOf(
                 "com.coloros.safecenter" to "com.coloros.safecenter.permission.startup.StartupAppListActivity",
             ),
         ),
         "vivo" to ManufacturerAdvice(
-            instruction = "Allow high background power use for Engram.",
+            instruction = "Allow high background power use for Relay.",
             components = listOf(
                 "com.vivo.permissionmanager" to "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",
             ),
         ),
         "oneplus" to ManufacturerAdvice(
-            instruction = "Turn off battery optimisation for Engram and disable Deep Optimisation.",
+            instruction = "Turn off battery optimisation for Relay and disable Deep Optimisation.",
             components = listOf(
                 "com.oneplus.security" to "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity",
             ),
         ),
         "samsung" to ManufacturerAdvice(
-            instruction = "Remove Engram from Sleeping apps in Device care.",
+            instruction = "Remove Relay from Sleeping apps in Device care.",
             components = listOf(
                 "com.samsung.android.lool" to "com.samsung.android.sm.ui.battery.BatteryActivity",
             ),

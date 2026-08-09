@@ -1,4 +1,4 @@
-package glass.engram.bridge
+package glass.relay.bridge
 
 import kotlinx.coroutines.delay
 import kotlin.math.min
@@ -73,7 +73,7 @@ class MockGlassesTransport(
 
     override suspend fun openAccessPoint(): AccessPoint {
         apOpen = true
-        return AccessPoint("Engram-MOCK", "12345678", "192.168.31.1")
+        return AccessPoint("Relay-MOCK", "12345678", "192.168.31.1")
     }
 
     override suspend fun closeAccessPoint() { apOpen = false }

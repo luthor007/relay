@@ -1,4 +1,4 @@
-package glass.engram.bridge
+package glass.relay.bridge
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -29,18 +29,18 @@ class BootReceiver : BroadcastReceiver() {
             return
         }
 
-        val missing = EngramCaptureService.missingPermissions(context)
+        val missing = RelayCaptureService.missingPermissions(context)
         if (missing.isNotEmpty()) {
             Log.w(TAG, "not restarting after boot, missing: $missing")
             return
         }
 
-        runCatching { EngramCaptureService.start(context) }
+        runCatching { RelayCaptureService.start(context) }
             .onFailure { Log.e(TAG, "failed to restart after boot", it) }
     }
 
     private companion object {
-        const val TAG = "EngramBoot"
+        const val TAG = "RelayBoot"
         val BOOT_ACTIONS = setOf(
             Intent.ACTION_BOOT_COMPLETED,
             "android.intent.action.QUICKBOOT_POWERON",
@@ -51,7 +51,7 @@ class BootReceiver : BroadcastReceiver() {
 
 /** Whether the user wants capture running, persisted across reboots and kills. */
 internal class CapturePreferences(context: Context) {
-    private val prefs = context.getSharedPreferences("engram.capture", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("relay.capture", Context.MODE_PRIVATE)
 
     var captureEnabled: Boolean
         get() = prefs.getBoolean(KEY_ENABLED, false)

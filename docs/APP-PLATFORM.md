@@ -1,6 +1,6 @@
-# EngramOS — the app platform
+# RelayOS — the app platform
 
-*How third parties build for Engram One.*
+*How third parties build for Relay One.*
 
 ---
 
@@ -11,13 +11,13 @@ the cloud POSTs a webhook when a session starts, and the app runs **on the
 developer's server** with a WebSocket back to the cloud. It works, and their SDK
 is MIT.
 
-EngramOS makes the opposite call, because our topology is different: **every
-Engram user already has a box.** The Cloud tier provisions a Linux machine to run
+RelayOS makes the opposite call, because our topology is different: **every
+Relay user already has a box.** The Cloud tier provisions a Linux machine to run
 their agents, and self-hosters run the same thing on hardware they own.
 
-So Engram apps run **on the user's own box**, not on the developer's server.
+So Relay apps run **on the user's own box**, not on the developer's server.
 
-| | MentraOS | EngramOS |
+| | MentraOS | RelayOS |
 |---|---|---|
 | App code runs on | developer's server | **the user's box** |
 | Developer sees user data | yes, it flows through them | **no** |
@@ -42,7 +42,7 @@ An app is an npm package with a manifest.
 
 ```
 standup-notes/
-  engram.json          manifest — identity, permissions, triggers
+  relay.json          manifest — identity, permissions, triggers
   src/index.ts         the app itself
   package.json
 ```
@@ -71,7 +71,7 @@ scope with a vague reason is a review rejection — the same rule MentraOS appli
 and for the same reason: "Microphone access" tells a user nothing.
 
 ```ts
-import { defineApp } from "@engram/sdk";
+import { defineApp } from "@relay/sdk";
 
 export default defineApp({
   async onTrigger(ctx) {
@@ -170,17 +170,17 @@ it scales far enough to learn what the sandbox actually needs.
 ## 6. Installation and distribution
 
 ```
-engram install dev.alexis.standup-notes
-engram list
-engram logs standup-notes
-engram remove standup-notes
+relay install dev.alexis.standup-notes
+relay list
+relay logs standup-notes
+relay remove standup-notes
 ```
 
 Install resolves the package, shows the permission sheet with each `reason`,
 waits for consent, then provisions the container. The phone app does the same
 through UI, against the same API on the box.
 
-The registry is `github.com/uulab/engram-apps` — a directory of manifests
+The registry is `github.com/uulab/relay-apps` — a directory of manifests
 pointing at source repositories. No central build service, no proprietary
 publishing pipeline, and forking the registry is a supported thing to do.
 
@@ -209,9 +209,9 @@ data, and gets reviewed as a manifest instead of a binary.
 
 ## 8. Build order
 
-1. `@engram/sdk` — types, `defineApp`, the capability interfaces *(started)*
+1. `@relay/sdk` — types, `defineApp`, the capability interfaces *(started)*
 2. App runtime on the box — container-per-app, capability minting, egress proxy
-3. `engram` CLI — install, list, logs, remove
+3. `relay` CLI — install, list, logs, remove
 4. MCP bridge so installed apps become agent tools
 5. Host-app rendering for the declarative vocabulary
 6. Registry repo and review process

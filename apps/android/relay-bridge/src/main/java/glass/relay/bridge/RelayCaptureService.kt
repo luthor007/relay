@@ -1,4 +1,4 @@
-package glass.engram.bridge
+package glass.relay.bridge
 
 import android.Manifest
 import android.app.Service
@@ -43,7 +43,7 @@ import kotlinx.coroutines.launch
  *    device with a camera and microphone is recording. It always reflects real
  *    state and is never silenced.
  */
-class EngramCaptureService : Service() {
+class RelayCaptureService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var notifications: CaptureNotifications
@@ -158,7 +158,7 @@ class EngramCaptureService : Service() {
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
         if (_state.value.recording) {
-            val restart = Intent(applicationContext, EngramCaptureService::class.java)
+            val restart = Intent(applicationContext, RelayCaptureService::class.java)
             ContextCompat.startForegroundService(applicationContext, restart)
         }
         super.onTaskRemoved(rootIntent)
@@ -167,14 +167,14 @@ class EngramCaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
-        private const val TAG = "EngramCapture"
-        private const val WAKE_LOCK_TAG = "engram:capture"
+        private const val TAG = "RelayCapture"
+        private const val WAKE_LOCK_TAG = "relay:capture"
 
         /** Renewed by the supervisor; a bounded lock cannot leak forever. */
         private const val WAKE_LOCK_TIMEOUT_MS = 12L * 60 * 60 * 1000
 
-        const val ACTION_STOP = "glass.engram.bridge.STOP"
-        const val ACTION_PAUSE_CAPTURE = "glass.engram.bridge.PAUSE_CAPTURE"
+        const val ACTION_STOP = "glass.relay.bridge.STOP"
+        const val ACTION_PAUSE_CAPTURE = "glass.relay.bridge.PAUSE_CAPTURE"
 
         /** Permissions that must be granted before the service can legally start. */
         fun missingPermissions(context: Context): List<String> {
@@ -198,13 +198,13 @@ class EngramCaptureService : Service() {
             require(missing.isEmpty()) { "grant these before starting capture: $missing" }
             ContextCompat.startForegroundService(
                 context,
-                Intent(context, EngramCaptureService::class.java),
+                Intent(context, RelayCaptureService::class.java),
             )
         }
 
         fun stop(context: Context) {
             context.startService(
-                Intent(context, EngramCaptureService::class.java).setAction(ACTION_STOP),
+                Intent(context, RelayCaptureService::class.java).setAction(ACTION_STOP),
             )
         }
     }

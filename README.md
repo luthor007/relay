@@ -1,8 +1,8 @@
-# Engram
+# Relay
 
 **Glasses that run your coding agents, remember your day, and answer when you ask.**
 
-Engram One is smart glasses for people who already live inside AI agents. Your
+Relay One is smart glasses for people who already live inside AI agents. Your
 Claude Code session keeps going after you stand up. Your day gets recorded,
 transcribed and searchable. Your agent can finally answer *"what did I decide
 about this yesterday?"*
@@ -10,7 +10,7 @@ about this yesterday?"*
 This repository is the whole stack: the BLE protocol, the SDK, the host apps, and
 everything you need to build on it or run it yourself.
 
-**[engram-swart-nu.vercel.app](https://engram-swart-nu.vercel.app) · [Preorder — $249](https://engram-swart-nu.vercel.app#buy)**
+**[relay-vert-nu.vercel.app](https://relay-vert-nu.vercel.app) · [Preorder — $249](https://relay-vert-nu.vercel.app#buy)**
 
 ---
 
@@ -28,7 +28,7 @@ day and can act on it.
 ```
 glasses/protocol/     BLE protocol codec — all 92 commands, 92 tests, Python
 glasses/bridge/       TypeScript transport interface + hardware-free mock
-apps/sdk/             @engram/sdk — build apps for Engram One
+apps/sdk/             @relay/sdk — build apps for Relay One
 apps/android/         Always-on capture service (Kotlin)
 tools/                Device probe and session capture instruments
 docs/                 Architecture, app platform, protocol notes
@@ -40,13 +40,13 @@ The mock is protocol-accurate and encodes real device timing, so you can build
 and test a full app before your glasses arrive.
 
 ```bash
-git clone https://github.com/luthor007/engram
-cd engram/glasses/bridge
+git clone https://github.com/luthor007/relay
+cd relay/glasses/bridge
 npm test          # 66 tests, no hardware required
 ```
 
 ```ts
-import { MockTransport, FakeClock } from "@engram/glasses-bridge";
+import { MockTransport, FakeClock } from "@relay/glasses-bridge";
 
 const clock = new FakeClock();
 const glasses = new MockTransport({ clock });
@@ -69,7 +69,7 @@ Apps run on **your own box**, not on the developer's server. The author never
 receives your transcript and never pays to host anything.
 
 ```ts
-import { defineApp } from "@engram/sdk";
+import { defineApp } from "@relay/sdk";
 
 export default defineApp({
   async onTrigger(ctx) {
@@ -83,7 +83,7 @@ export default defineApp({
 });
 ```
 
-Declare what it needs in `engram.json` and it becomes a tool your agent can call:
+Declare what it needs in `relay.json` and it becomes a tool your agent can call:
 
 ```json
 {
@@ -163,4 +163,4 @@ implementation, written from the published protocol documentation.
 
 ---
 
-Built by [UU Lab](https://engram-swart-nu.vercel.app), a trade name of Jappuie Inc., Québec.
+Built by [UU Lab](https://relay-vert-nu.vercel.app), a trade name of Jappuie Inc., Québec.
