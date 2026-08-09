@@ -7,9 +7,9 @@ as three separate side businesses. They are one product.*
 
 ## 1. The product
 
-$249 glasses plus a subscription for a rented always-on Linux box running the
-user's agent sessions (Claude Code, Codex, OpenCode, Hermes) with a full browser
-and toolchain.
+$249 glasses plus a subscription for an always-on Mac mini of ours running the
+user's agent sessions — Claude Code, OpenClaw, Hermes, Codex, OpenCode — with a
+full browser and toolchain.
 
 Four things the glasses do:
 
@@ -34,7 +34,7 @@ accumulated context.
 flowchart LR
     G["Glasses (M01 Pro)<br/>mic · camera · speaker · touch<br/>BLE + own WiFi AP"]
     P["Phone bridge<br/>iOS / Android<br/>BLE central + uplink"]
-    B["Rented Linux box<br/>agents · Chrome · tools<br/>memory store"]
+    B["Always-on Mac mini<br/>agents · Chrome · tools<br/>memory store"]
     M["Model providers<br/>Claude Code / Codex / API"]
 
     G <-->|"BLE GATT<br/>audio · photo · touch · control"| P
@@ -50,8 +50,8 @@ pages of 通信协议 v2.0.17: the only WiFi configuration commands are `0x0901`
 设置 WIFI SSID and `0x0902` 设置 WIFI 密码, both deprecated, and both configuring
 the device's *own* hotspot (设置热点). `0x090B` opens and closes that AP.
 
-Therefore the rented box can never reach the glasses directly, and **the phone
-app is the spine of the product, not an accessory.** It cannot ship later.
+Therefore the box can never reach the glasses directly, and **the phone app is
+the spine of the product, not an accessory.** It cannot ship later.
 
 This resolves the open question in AGENT-BRIEF §8-D ("verify this, it decides two
 weeks of work"). It is decided.
@@ -114,24 +114,20 @@ the app into the background when the glasses reconnect.
 **The phone pays for all-day capture too** — continuous BLE plus uplink is a real
 drain on the user's phone battery and data, not only on the glasses.
 
-### 3.3 Rented box — Linux
+### 3.3 The always-on machine
 
 Not a bare VPS. It is a browser-automation and development host:
 
 - **Chrome/Chromium headless** plus a display server for anything that needs one
 - Full toolchain: git, node, python, ripgrep, build tools
-- The agent runtimes themselves: Claude Code, Codex, OpenCode, Hermes
+- The agent runtimes themselves: Claude Code, OpenClaw, Hermes, Codex, OpenCode
 - Persistent home directory — the agent's working state and the user's memory
 - Per-user isolation (container or VM), because agents execute arbitrary code
 
-Sizing: agents plus Chrome want **8–16 GB RAM**; Chrome alone will take 1–2 GB
-under load, which is most of why the entry tier is 8 GB rather than 4. Renting
-Mac hardware costs several times a Linux box of the same size while running the
-same agents, which is why §8-D ruled it out. Costs and tier pricing are in
-`CLOUD.md`.
-
-A macOS tier stays viable later as an upsell for users who need Xcode, priced to
-cover its real cost.
+Sizing: agents plus Chrome want **8–16 GB RAM**; Chrome alone takes 1–2 GB under
+load. The boxes are **Mac minis we own**, one per customer, which is what makes
+"close your laptop and it keeps going" true today. Linux is the likely move once
+customer count makes single-tenant hardware uneconomic — see `CLOUD.md` §5.
 
 ### 3.4 Model access
 
