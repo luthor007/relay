@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "device": {
+    "model": "M01 Pro",
+    "firmware": "synthetic"
+  },
+  "notes": "Synthetic unstable link — for building reconnect and error UI.",
+  "events": [
+    {
+      "tMs": 0,
+      "event": "connectionChanged",
+      "payload": "connected"
+    },
+    {
+      "tMs": 500,
+      "event": "battery",
+      "payload": {
+        "percent": 14,
+        "charging": false
+      }
+    },
+    {
+      "tMs": 3000,
+      "event": "touch",
+      "payload": "wear"
+    },
+    {
+      "tMs": 3010,
+      "event": "wear",
+      "payload": true
+    },
+    {
+      "tMs": 9000,
+      "event": "connectionChanged",
+      "payload": "disconnected"
+    },
+    {
+      "tMs": 12000,
+      "event": "connectionChanged",
+      "payload": "reconnecting"
+    },
+    {
+      "tMs": 15000,
+      "event": "connectionChanged",
+      "payload": "connected"
+    },
+    {
+      "tMs": 15500,
+      "event": "battery",
+      "payload": {
+        "percent": 11,
+        "charging": false
+      }
+    }
+  ]
+}

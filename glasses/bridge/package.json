@@ -1,0 +1,30 @@
+{
+  "name": "@uulab/glasses-bridge",
+  "version": "0.1.0",
+  "description": "Transport interface and hardware-free mock for the M01 Pro glasses",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "fixtures"
+  ],
+  "scripts": {
+    "test": "node --test test/",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@types/node": "^26.2.0"
+  }
+}

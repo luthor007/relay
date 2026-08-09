@@ -1,0 +1,87 @@
+package glass.engram.bridge
+
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.random.Random
+
+/**
+ * Reconnection timing is the kind of thing that regresses silently and only
+ * shows up as "it stopped recording", so it is pinned here.
+ */
+class ConnectionSupervisorTest {
+
+    @Test
+    fun `backoff never exceeds the cap`() {
+        for (attempt in 0..40) {
+            val wait = ConnectionSupervisor.backoffMs(attempt)
+            assertTrue("attempt $attempt gave ${wait}ms", wait in 1_000..30_000)
+        }
+    }
+
+    @Test
+    fun `backoff grows before it saturates`() {
+        // Deterministic RNG so this asserts the ceiling, not the sample.
+        val alwaysMax = object : Random() {
+            override fun nextBits(bitCount: Int) = 0
+            override fun nextLong(from: Long, until: Long) = until - 1
+        }
+        val early = ConnectionSupervisor.backoffMs(0, alwaysMax)
+        val mid = ConnectionSupervisor.backoffMs(3, alwaysMax)
+        val late = ConnectionSupervisor.backoffMs(20, alwaysMax)
+
+        assertTrue("early=$early mid=$mid", mid > early)
+        assertEquals("should saturate at the cap", 30_000L, late)
+    }
+
+    @Test
+    fun `backoff is jittered, not fixed`() {
+        // A shared trigger (Bluetooth toggled, phone woke) reconnects every app
+        // at once; identical delays turn that into a thundering herd.
+        val samples = (0..50).map { ConnectionSupervisor.backoffMs(5) }.toSet()
+        assertTrue("expected varied delays, got $samples", samples.size > 1)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `wearing the glasses starts recording, removing them stops it`() = runTest {
+        val transport = MockGlassesTransport(connectDelayMs = 0)
+        val supervisor = ConnectionSupervisor(transport, this)
+
+        supervisor.start()
+        transport.connect()
+
+        transport.simulateWear(true)
+        assertTrue("wear should begin capture", supervisor.capture.value.worn)
+
+        transport.simulateWear(false)
+        assertEquals(false, supervisor.capture.value.worn)
+
+        supervisor.stop()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `losing the link does not clear the recording flag`() = runTest {
+        // The glasses keep writing to their own storage while the phone is out
+        // of range. Showing "not recording" there would be a lie, and would push
+        // people to re-start a recording that never stopped.
+        val transport = MockGlassesTransport(connectDelayMs = 0)
+        val supervisor = ConnectionSupervisor(transport, this)
+
+        supervisor.start()
+        transport.connect()
+        transport.simulateWear(true)
+        transport.startLocalRecording()
+
+        transport.simulateDisconnect()
+
+        assertTrue(
+            "recording must survive a dropped link",
+            supervisor.capture.value.recording,
+        )
+        supervisor.stop()
+    }
+}

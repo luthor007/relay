@@ -1,0 +1,348 @@
+{
+  "version": 1,
+  "device": {
+    "model": "M01 Pro",
+    "firmware": "synthetic"
+  },
+  "notes": "Synthetic desk session — wear, voice query, photo, removal. Replace with a real capture from tools/capture_trace.py.",
+  "events": [
+    {
+      "tMs": 0,
+      "event": "connectionChanged",
+      "payload": "connected"
+    },
+    {
+      "tMs": 150,
+      "event": "battery",
+      "payload": {
+        "percent": 88,
+        "charging": true
+      }
+    },
+    {
+      "tMs": 300,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 3865470566.4
+      }
+    },
+    {
+      "tMs": 2000,
+      "event": "touch",
+      "payload": "wear"
+    },
+    {
+      "tMs": 2010,
+      "event": "wear",
+      "payload": true
+    },
+    {
+      "tMs": 2500,
+      "event": "recordingState",
+      "payload": {
+        "recording": true,
+        "durationS": 0
+      }
+    },
+    {
+      "tMs": 8000,
+      "event": "touch",
+      "payload": "doubleTap"
+    },
+    {
+      "tMs": 8100,
+      "event": "voiceSessionChanged",
+      "payload": true
+    },
+    {
+      "tMs": 8400,
+      "event": "audioChunk",
+      "payload": {
+        "data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 0,
+        "deviceTimeMs": 8400
+      }
+    },
+    {
+      "tMs": 8600,
+      "event": "audioChunk",
+      "payload": {
+        "data": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 1,
+        "deviceTimeMs": 8600
+      }
+    },
+    {
+      "tMs": 8800,
+      "event": "audioChunk",
+      "payload": {
+        "data": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 2,
+        "deviceTimeMs": 8800
+      }
+    },
+    {
+      "tMs": 9000,
+      "event": "audioChunk",
+      "payload": {
+        "data": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 3,
+        "deviceTimeMs": 9000
+      }
+    },
+    {
+      "tMs": 9200,
+      "event": "audioChunk",
+      "payload": {
+        "data": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 4,
+        "deviceTimeMs": 9200
+      }
+    },
+    {
+      "tMs": 9400,
+      "event": "audioChunk",
+      "payload": {
+        "data": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUF",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 5,
+        "deviceTimeMs": 9400
+      }
+    },
+    {
+      "tMs": 9600,
+      "event": "audioChunk",
+      "payload": {
+        "data": "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYG",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 6,
+        "deviceTimeMs": 9600
+      }
+    },
+    {
+      "tMs": 9800,
+      "event": "audioChunk",
+      "payload": {
+        "data": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 7,
+        "deviceTimeMs": 9800
+      }
+    },
+    {
+      "tMs": 10000,
+      "event": "audioChunk",
+      "payload": {
+        "data": "CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 8,
+        "deviceTimeMs": 10000
+      }
+    },
+    {
+      "tMs": 10200,
+      "event": "audioChunk",
+      "payload": {
+        "data": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJ",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 9,
+        "deviceTimeMs": 10200
+      }
+    },
+    {
+      "tMs": 10400,
+      "event": "audioChunk",
+      "payload": {
+        "data": "CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoK",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 10,
+        "deviceTimeMs": 10400
+      }
+    },
+    {
+      "tMs": 10600,
+      "event": "audioChunk",
+      "payload": {
+        "data": "CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsL",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 11,
+        "deviceTimeMs": 10600
+      }
+    },
+    {
+      "tMs": 10800,
+      "event": "audioChunk",
+      "payload": {
+        "data": "DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 12,
+        "deviceTimeMs": 10800
+      }
+    },
+    {
+      "tMs": 11000,
+      "event": "audioChunk",
+      "payload": {
+        "data": "DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0N",
+        "format": "opus",
+        "sampleRate": 16000,
+        "channels": 1,
+        "sequence": 13,
+        "deviceTimeMs": 11000
+      }
+    },
+    {
+      "tMs": 11400,
+      "event": "transcriptText",
+      "payload": "what did I decide about the CRC yesterday"
+    },
+    {
+      "tMs": 11600,
+      "event": "voiceSessionChanged",
+      "payload": false
+    },
+    {
+      "tMs": 20000,
+      "event": "touch",
+      "payload": "singleTap"
+    },
+    {
+      "tMs": 20250,
+      "event": "photoProgress",
+      "payload": {
+        "receivedBytes": 768,
+        "totalBytes": 6144,
+        "chunkIndex": 1,
+        "chunkCount": 8
+      }
+    },
+    {
+      "tMs": 20500,
+      "event": "photoProgress",
+      "payload": {
+        "receivedBytes": 1536,
+        "totalBytes": 6144,
+        "chunkIndex": 2,
+        "chunkCount": 8
+      }
+    },
+    {
+      "tMs": 20750,
+      "event": "photoProgress",
+      "payload": {
+        "receivedBytes": 2304,
+        "totalBytes": 6144,
+        "chunkIndex": 3,
+        "chunkCount": 8
+      }
+    },
+    {
+      "tMs": 21000,
+      "event": "photoProgress",
+      "payload": {
+        "receivedBytes": 3072,
+        "totalBytes": 6144,
+        "chunkIndex": 4,
+        "chunkCount": 8
+      }
+    },
+    {
+      "tMs": 21250,
+      "event": "photoProgress",
+      "payload": {
+        "receivedBytes": 3840,
+        "totalBytes": 6144,
+        "chunkIndex": 5,
+        "chunkCount": 8
+      }
+    },
+    {
+      "tMs": 21500,
+      "event": "photoProgress",
+      "payload": {
+        "receivedBytes": 4608,
+        "totalBytes": 6144,
+        "chunkIndex": 6,
+        "chunkCount": 8
+      }
+    },
+    {
+      "tMs": 21750,
+      "event": "photoProgress",
+      "payload": {
+        "receivedBytes": 5376,
+        "totalBytes": 6144,
+        "chunkIndex": 7,
+        "chunkCount": 8
+      }
+    },
+    {
+      "tMs": 22000,
+      "event": "photoProgress",
+      "payload": {
+        "receivedBytes": 6144,
+        "totalBytes": 6144,
+        "chunkIndex": 8,
+        "chunkCount": 8
+      }
+    },
+    {
+      "tMs": 28000,
+      "event": "battery",
+      "payload": {
+        "percent": 89,
+        "charging": true
+      }
+    },
+    {
+      "tMs": 45000,
+      "event": "touch",
+      "payload": "remove"
+    },
+    {
+      "tMs": 45010,
+      "event": "wear",
+      "payload": false
+    },
+    {
+      "tMs": 45500,
+      "event": "recordingState",
+      "payload": {
+        "recording": false,
+        "durationS": 43
+      }
+    }
+  ]
+}
