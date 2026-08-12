@@ -1084,7 +1084,7 @@ public final class RelaydLink: @unchecked Sendable {
 
         while true {
             let next: (socket: RelaydSocket, entry: OutboxEntry)? = locked {
-                guard let socket, let entry = outbox.first else { return nil }
+                guard let socket = self.socket, let entry = outbox.first else { return nil }
                 return (socket: socket, entry: entry)
             }
             guard let next else { return }

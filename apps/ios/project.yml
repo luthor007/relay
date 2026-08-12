@@ -61,17 +61,33 @@ targets:
     platform: iOS
     sources:
       - path: RelayKitTests
-      # Transport.swift is carried into the test bundle as a *resource*, not
-      # compiled twice. `CommandCatalogTests` re-parses it to prove that every
-      # method on GlassesTransport has a tappable command behind it — the same
-      # trick glasses/bridge plays against glasses/protocol/commands.py, and the
-      # only way "every glasses command, by hand" stays true rather than
-      # becoming a comment. Remove this entry and that test fails loudly rather
-      # than passing vacuously.
-      - path: RelayKit/Transport.swift
-        buildPhase: resources
     dependencies:
       - target: RelayKit
+    # Transport.swift is carried into the test bundle as a *resource*, not
+    # compiled twice. `CommandCatalogTests` re-parses it to prove that every
+    # method on GlassesTransport has a tappable command behind it — the same
+    # trick glasses/bridge plays against glasses/protocol/commands.py, and the
+    # only way "every glasses command, by hand" stays true rather than becoming
+    # a comment. Remove this and that test fails loudly rather than passing
+    # vacuously.
+    #
+    # It is a script rather than the obvious `buildPhase: resources`, which is
+    # what this was and which silently did nothing: Xcode refuses to put a
+    # source file through Copy Bundle Resources, says so as a warning, and
+    # carries on. The file was in the project, absent from the bundle, and the
+    # test failed with a message blaming a project.yml entry that was in fact
+    # present. Declaring the input and output keeps this incremental and keeps
+    # it legal under ENABLE_USER_SCRIPT_SANDBOXING.
+    postBuildScripts:
+      - name: Carry Transport.swift into the test bundle
+        script: |
+          set -eu
+          cp "$SRCROOT/RelayKit/Transport.swift" \
+             "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Transport.swift"
+        inputFiles:
+          - $(SRCROOT)/RelayKit/Transport.swift
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Transport.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: glass.relay.kit.tests

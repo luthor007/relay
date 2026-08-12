@@ -64,7 +64,7 @@ final class HotspotSyncNetwork: SyncNetwork, @unchecked Sendable {
         let port = boxPort
         lock.unlock()
 
-        guard let host, let nwPort = NWEndpoint.Port(rawValue: port) else { return .none }
+        guard let host, let nwPort = Network.NWEndpoint.Port(rawValue: port) else { return .none }
         // A direct TCP connect, not a ping: what matters is whether *this* box
         // answers on the LAN, and "the internet is up" is a different question
         // with a different answer.
@@ -106,11 +106,11 @@ final class HotspotSyncNetwork: SyncNetwork, @unchecked Sendable {
 
     private static func canConnect(
         host: String,
-        port: NWEndpoint.Port,
+        port: Network.NWEndpoint.Port,
         timeoutMs: Int = 2_000
     ) async -> Bool {
         await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            let connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: .tcp)
+            let connection = NWConnection(host: Network.NWEndpoint.Host(host), port: port, using: .tcp)
             let settled = NSLock()
             var finished = false
 

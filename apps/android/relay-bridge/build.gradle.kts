@@ -103,4 +103,17 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // A working org.json on the unit-test classpath.
+    //
+    // android.jar's org.json is a stub whose every method throws, and
+    // `unitTests.isReturnDefaultValues = true` above converts that throw into a
+    // null return — so `JSONObject.put(k, 1)` hands back null instead of `this`,
+    // and the next call in the chain dies on a NullPointerException inside
+    // Envelope.kt. It cost 51 tests across Envelope, Outbox and RelaydLink, all
+    // of them reporting an NPE in code that is correct.
+    //
+    // This real implementation comes first on the classpath and shadows the
+    // stub. It is test-only: the device already has org.json in the framework.
+    testImplementation(libs.json)
 }

@@ -391,7 +391,12 @@ public actor BulkSync {
         // "failed while uploading" send the user to different places.
         let phaseAtFailure = failedIn ?? currentPhase
         setPhase(.failed)
-        let left = remaining ?? (await queue.size)
+        let left: Int
+        if let remaining {
+            left = remaining
+        } else {
+            left = await queue.size
+        }
         return finish(SyncResult(
             phase: .failed,
             filesPulled: filesPulled,

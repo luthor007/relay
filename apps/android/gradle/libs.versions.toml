@@ -8,8 +8,11 @@ lifecycle = "2.8.7"
 activityCompose = "1.9.3"
 composeBom = "2024.10.01"
 junit = "4.13.2"
+# A real org.json for unit tests; see relay-bridge/build.gradle.kts.
+json = "20250107"
 
 [libraries]
+json = { group = "org.json", name = "json", version.ref = "json" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
 # Supplies LocalLifecycleOwner and collectAsStateWithLifecycle. Without it the

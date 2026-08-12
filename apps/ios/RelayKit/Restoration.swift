@@ -286,8 +286,8 @@ public enum Restoration {
             // Everything in the snapshot is re-derivable from the glasses and
             // the queue on disk. Guessing at a foreign layout is not.
             return RestorationPlan(
-                presentUI: presentUI,
                 restoreQueue: true,
+                presentUI: presentUI,
                 coldStart: true,
                 reason: "snapshot schema \(snapshot.schemaVersion) is not "
                     + "\(CaptureSnapshot.currentSchemaVersion); discarded"
