@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status-bar icon for the capture notification.
+
+  Notification small icons are drawn as a silhouette: Android throws away every
+  colour and keeps only the alpha channel. So this is solid white on transparent
+  and reads purely as shape — anything else appears as a white blob.
+
+  The shape is the Relay mark reduced until it survives at 24dp: two lenses and
+  the bridge, filled rather than stroked, because a 2dp stroke disappears in the
+  status bar.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6.5,8 C4.567,8 3,9.567 3,11.5 C3,13.433 4.567,15 6.5,15 C8.433,15 10,13.433 10,11.5 C10,9.567 8.433,8 6.5,8 Z M6.5,10 C7.328,10 8,10.672 8,11.5 C8,12.328 7.328,13 6.5,13 C5.672,13 5,12.328 5,11.5 C5,10.672 5.672,10 6.5,10 Z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17.5,8 C15.567,8 14,9.567 14,11.5 C14,13.433 15.567,15 17.5,15 C19.433,15 21,13.433 21,11.5 C21,9.567 19.433,8 17.5,8 Z M17.5,10 C18.328,10 19,10.672 19,11.5 C19,12.328 18.328,13 17.5,13 C16.672,13 16,12.328 16,11.5 C16,10.672 16.672,10 17.5,10 Z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.5,10.75 L13.5,10.75 L13.5,12.25 L10.5,12.25 Z" />
+</vector>

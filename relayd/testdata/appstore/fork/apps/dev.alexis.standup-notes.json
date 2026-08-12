@@ -1,0 +1,55 @@
+{
+  "manifest": {
+    "id": "dev.alexis.standup-notes",
+    "name": "Standup Notes",
+    "version": "1.1.0",
+    "description": "Turns the standup you just had into notes and commitments you will actually keep.",
+    "author": {
+      "name": "Alexis Massicotte",
+      "url": "https://github.com/luthor007"
+    },
+    "permissions": [
+      {
+        "scope": "memory.read",
+        "reason": "To read the transcript of the meeting you just left."
+      },
+      {
+        "scope": "memory.write",
+        "reason": "To save the notes and commitments it extracts back to your memory."
+      },
+      {
+        "scope": "agent.session",
+        "reason": "To summarise the meeting using your own agent and your own model."
+      },
+      {
+        "scope": "glasses.speaker",
+        "reason": "To read the commitments back to you when you ask."
+      },
+      {
+        "scope": "glasses.camera",
+        "reason": "To photograph the whiteboard when the standup used one."
+      }
+    ],
+    "triggers": [
+      {
+        "type": "phrase",
+        "match": "wrap up the standup"
+      },
+      {
+        "type": "memory",
+        "event": "meeting.ended"
+      },
+      {
+        "type": "tool",
+        "description": "Summarise the most recent meeting into decisions and commitments."
+      }
+    ],
+    "timeoutMs": 60000
+  },
+  "source": {
+    "git": "https://github.com/luthor007/standup-notes",
+    "rev": "v1.1.0"
+  },
+  "review": "https://github.com/someone/relay-apps-fork/pull/3",
+  "listedAt": "2026-07-02T15:04:05Z"
+}

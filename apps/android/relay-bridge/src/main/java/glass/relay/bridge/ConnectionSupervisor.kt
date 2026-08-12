@@ -35,6 +35,19 @@ import kotlin.random.Random
 class ConnectionSupervisor(
     private val transport: GlassesTransport,
     private val scope: CoroutineScope,
+
+    /**
+     * Whether this supervisor drives `0x0E04` itself.
+     *
+     * True keeps the original behaviour — wear starts and stops recording right
+     * here — and is what every existing caller and test gets. The service sets
+     * it false and hands recording to
+     * [glass.relay.bridge.capture.LocalRecordingController], which owns the
+     * same decision plus consent gating and segment rolling. Two components
+     * both issuing `0x0E04` on the same wear event would fight, and the symptom
+     * would be capture flapping rather than an error.
+     */
+    private val ownsRecording: Boolean = true,
 ) {
 
     private val _state = MutableStateFlow(ConnectionState.Disconnected)
@@ -50,7 +63,11 @@ class ConnectionSupervisor(
     fun start() {
         if (supervisorJob?.isActive == true) return
         supervisorJob = scope.launch {
-            observeEvents()
+            // A child of this job, so [stop] actually stops it. Launching the
+            // collector into `scope` instead leaks one subscriber per start/stop
+            // cycle, and each leaked collector keeps mutating `_capture` — so a
+            // restarted supervisor would fight its own predecessors.
+            launch { observeEvents() }
             maintainConnection()
         }
     }
@@ -67,8 +84,10 @@ class ConnectionSupervisor(
     /** User-initiated pause. Survives reconnects until capture is resumed. */
     suspend fun pauseCapture() {
         captureAllowed = false
-        runCatching { transport.stopLocalRecording() }
-        _capture.value = _capture.value.copy(recording = false)
+        if (ownsRecording) {
+            runCatching { transport.stopLocalRecording() }
+            _capture.value = _capture.value.copy(recording = false)
+        }
     }
 
     suspend fun resumeCapture() {
@@ -76,30 +95,28 @@ class ConnectionSupervisor(
         if (_capture.value.worn) startRecordingIfAllowed()
     }
 
-    private fun observeEvents() {
-        scope.launch {
-            transport.events.collect { event ->
-                when (event) {
-                    is GlassesEvent.Wear -> {
-                        _capture.value = _capture.value.copy(worn = event.worn)
-                        if (event.worn) startRecordingIfAllowed() else stopRecording()
-                    }
-                    is GlassesEvent.Battery -> {
-                        _capture.value = _capture.value.copy(
-                            batteryPercent = event.percent,
-                            charging = event.charging,
-                        )
-                    }
-                    is GlassesEvent.RecordingState -> {
-                        _capture.value = _capture.value.copy(recording = event.recording)
-                    }
-                    is GlassesEvent.Disconnected -> {
-                        // Do not clear `recording`: the glasses are still writing
-                        // to their own storage. Only our visibility was lost.
-                        _state.value = ConnectionState.Reconnecting
-                    }
-                    else -> Unit
+    private suspend fun observeEvents() {
+        transport.events.collect { event ->
+            when (event) {
+                is GlassesEvent.Wear -> {
+                    _capture.value = _capture.value.copy(worn = event.worn)
+                    if (event.worn) startRecordingIfAllowed() else stopRecording()
                 }
+                is GlassesEvent.Battery -> {
+                    _capture.value = _capture.value.copy(
+                        batteryPercent = event.percent,
+                        charging = event.charging,
+                    )
+                }
+                is GlassesEvent.RecordingState -> {
+                    _capture.value = _capture.value.copy(recording = event.recording)
+                }
+                is GlassesEvent.Disconnected -> {
+                    // Do not clear `recording`: the glasses are still writing
+                    // to their own storage. Only our visibility was lost.
+                    _state.value = ConnectionState.Reconnecting
+                }
+                else -> Unit
             }
         }
     }
@@ -153,6 +170,7 @@ class ConnectionSupervisor(
     }
 
     private suspend fun startRecordingIfAllowed() {
+        if (!ownsRecording) return
         if (!captureAllowed) return
         if (_capture.value.recording) return
         runCatching { transport.startLocalRecording() }
@@ -161,6 +179,7 @@ class ConnectionSupervisor(
     }
 
     private suspend fun stopRecording() {
+        if (!ownsRecording) return
         if (!_capture.value.recording) return
         runCatching { transport.stopLocalRecording() }
         _capture.value = _capture.value.copy(recording = false)
@@ -198,6 +217,31 @@ data class CaptureState(
     val recording: Boolean = false,
     val worn: Boolean = false,
     val batteryPercent: Int? = null,
+
+    /**
+     * The consent question waiting on a person, or null.
+     *
+     * `ARCHITECTURE.md` §6's "until confirmed" needs somewhere to be confirmed.
+     * It rides the same state object as everything else so the notification and
+     * the home screen cannot disagree about whether capture is waiting.
+     */
+    val consentQuestion: String? = null,
+
+    /** Why capture is or is not running, from `ConsentGate.Verdict.why`. */
+    val consentWhy: String? = null,
+
+    /**
+     * The link to the box, which is a different thing from the link to the
+     * glasses.
+     *
+     * Both can be down independently and the failures look nothing alike:
+     * glasses down means no new audio, box down means the day is piling up on
+     * the phone. A single "connected" would hide whichever one is broken.
+     */
+    val boxConnection: ConnectionState = ConnectionState.Disconnected,
+
+    /** The last thing the box said — a `speak` or a `notify`. `SYSTEM.md` §6.1. */
+    val lastFromBox: String? = null,
 ) {
     companion object {
         val Idle = CaptureState()

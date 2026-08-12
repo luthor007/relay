@@ -30,4 +30,14 @@
 
     <string name="relay_action_stop">Stop</string>
 
+    <!--
+      The consent answer, in the shade. ARCHITECTURE.md §6 requires capture to
+      default off in a new location "until confirmed", and the confirmation has
+      to be one tap from wherever the wearer is — not a screen in an app they
+      have to remember to open. Deliberately plain: "Record here" states what
+      granting it does, and "Not now" is a refusal rather than a dismissal.
+    -->
+    <string name="relay_action_consent_yes">Record here</string>
+    <string name="relay_action_consent_no">Not now</string>
+
 </resources>

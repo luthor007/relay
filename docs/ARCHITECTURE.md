@@ -82,7 +82,7 @@ Capabilities confirmed from the shipping iOS SDK headers and the protocol spec:
 | Function | Mechanism |
 |---|---|
 | Microphone | Opus and PCM, 16 kHz mono (`0x0A03` 音频数据) |
-| On-device ASR | device returns recognized text directly (`didReceiveAIChatTextMessage`) |
+| Speech recognition | **none on device.** It reports an event and the app recognises — `didReceiveAIChatTextMessage` is the *vendor's* cloud assistant, not ours to inherit. See `SYSTEM.md` §7b |
 | Photo | `0x0906`/`0x0907`, delivered **chunked over BLE** — no WiFi needed |
 | Speaker | output routing to glasses vs phone (`setSpeakerPlaybackStatus`) |
 | Touch | tap ×1/2/3, long press, swipe fwd/back (`QCDeviceTouchAction`) |
@@ -261,11 +261,40 @@ one of them is free:
 | Supplier firmware build | one branded phrase on every unit | money, lead time, an MOQ, and still not per-user |
 | Phone-side spotter | genuinely per-user phrases | the mic stream must stay open, which is the continuous-BLE cost §5.3 exists to avoid |
 
-Recommendation: **tap-to-talk is the primary trigger.** Let users *name* their
-assistant — what it calls itself, how it signs off, what the app labels it — and
-decouple that from the wake phrase, which stays whatever the firmware supports.
-Naming is the part people actually want; hands-free is the part that costs a
-battery.
+**Decision, 2026-08-11: hands-free is a requirement, not a nice-to-have.** An
+earlier revision of this section recommended tap-to-talk as the primary trigger
+and treated naming as a substitute for it. That was wrong about the product: a
+trigger you can only reach with a free hand fails in the exact moments the
+glasses exist for — driving, carrying something, mid-meeting, hands in a project.
+
+Note what the firmware ceiling actually covers. It blocks *a custom phrase in the
+device's DSP*. It does not block hands-free, because `0x0A02`/`0x0A03` already
+carry the mic to the phone and the bridge already implements the uplink
+(`startMicUplink` / `audioChunk`). Route 3 was always the one that matches the
+product; it was priced as expensive and then dropped without measuring.
+
+So: **phone-side spotter, gated by power state.**
+
+| State | Trigger | Why |
+|---|---|---|
+| Plugged in | wake phrase, always listening | §5.4 — charging covers most desk hours at zero battery cost |
+| Unplugged, above threshold | wake phrase | the cost is real but bounded; the threshold is a user setting |
+| Unplugged, below threshold | tap only, and say so in the app | degrade honestly rather than dying silently |
+
+Two things make this fit the channel. First, `0x0A03` is **bidirectional and
+shares one ~3 KB/s budget** (`commands.ts`), so a full-rate 24 kbps uplink
+saturates it and starves the reply — the wake stream must run lower. Second, a
+spotter does not need capture quality: 16 kHz mono at 8–16 kbps is ~1–2 KB/s and
+leaves headroom. Whether `0x0A02` exposes bitrate or format control is unverified
+and is now a §7 question.
+
+Independently, on the first supplier order: ask for a **neutral wake phrase** in
+the keyword table, not just the removal of `"hey chatgpt"`. That buys a zero-power
+hardware trigger for the default phrase. Per-user names still ride the phone-side
+spotter — one is the cheap path, the other is the general one, and they compose.
+
+Naming the assistant remains worth doing. It is no longer the *answer* to
+hands-free.
 
 **Text to speech is ours to choose and is not chosen yet.** The return path is
 easy — the glasses are a normal Bluetooth audio sink (they do music and calls),
@@ -283,10 +312,11 @@ fallback, since it is free, instant and always available.
 *Do not take published latency numbers on faith.* Measure round trip on this
 device, over A2DP, from the box — that path has more hops than a vendor's demo.
 
-Speech **in** may be free: the device reports recognised text directly
-(`didReceiveAIChatTextMessage`), so STT may need no provider at all. Confirm on
-hardware; if the on-device recogniser is weak, the audio is already streaming and
-can go to a cloud STT instead.
+Speech **in** is not free, contrary to an earlier note here. The device has no
+recogniser: `0x0803`/`0x0805` show it reporting an event while the *app* starts
+and stops recognition, and `didReceiveAIChatTextMessage` is the vendor's own
+cloud assistant. ASR is ours to run, on the phone or in the cloud. See
+`SYSTEM.md` §7b.
 
 ### 5.2c Can we update the firmware?
 
@@ -395,6 +425,8 @@ Architectural implications:
 | **Hardware recording indicator** | legal and social viability of passive capture | inspect a unit; check protocol for LED control |
 | **FCC ID** | required to resell in the US | confirm with supplier (already flagged in §8-B) |
 | **Real BLE throughput** | sets the `look()` resolution dial | measure MTU and sustained rate |
+| **Does `0x0A02` expose mic bitrate or format?** | decides whether a low-rate wake stream can share the ~3 KB/s channel with the reply (§5.2b) | one capture with the uplink open; inspect the control payload |
+| **Battery while streaming the mic unplugged** | sets the hands-free threshold in §5.2b; distinct from local recording, since this adds the BLE radio | measure on hardware, plugged vs unplugged |
 | **iOS background survival** | if the app is killed, capture silently stops | prototype against Mentra's approved patterns |
 | **Headless OAuth for BYO subscriptions** | onboarding friction on every single user | prototype the login flow early |
 

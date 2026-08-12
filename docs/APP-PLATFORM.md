@@ -180,7 +180,7 @@ Install resolves the package, shows the permission sheet with each `reason`,
 waits for consent, then provisions the container. The phone app does the same
 through UI, against the same API on the box.
 
-The registry is `github.com/uulab/relay-apps` — a directory of manifests
+The registry is `github.com/luthor007/relay-apps` — a directory of manifests
 pointing at source repositories. No central build service, no proprietary
 publishing pipeline, and forking the registry is a supported thing to do.
 

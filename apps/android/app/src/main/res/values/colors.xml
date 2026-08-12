@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lifted from site/index.html so the app and the landing page are the same
+  product. `relay_live` is the recording amber and is used for exactly one
+  thing — indicating that a microphone is on. Never decoration.
+-->
+<resources>
+    <color name="relay_ground">#FF0A0B0D</color>
+    <color name="relay_surface">#FF131519</color>
+    <color name="relay_line">#FF23262C</color>
+    <color name="relay_ink">#FFEFEDE8</color>
+    <color name="relay_ink_mid">#FFA9ADB4</color>
+    <color name="relay_ink_dim">#FF797E86</color>
+    <color name="relay_live">#FFE9A23B</color>
+</resources>

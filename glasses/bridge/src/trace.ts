@@ -192,7 +192,16 @@ export function serialiseTrace(trace: Trace): string {
 }
 
 /** Build a trace programmatically — used by fixtures and by tests. */
-export class TraceBuilder {
+/**
+ * Generic over the event map so a caller that knows about a wider set — the
+ * command surface adds events on top of `GlassesEvents` — can build traces
+ * without a cast. Defaults to `GlassesEvents`, so every existing caller is
+ * unchanged.
+ *
+ * The parameter is here rather than a direct import of the command map because
+ * this is the low-level trace module: it must not depend on the layer above it.
+ */
+export class TraceBuilder<Events extends object = GlassesEvents> {
   #events: TraceEventRecord[] = [];
   #frames: TraceFrame[] = [];
   // Explicit field, not a constructor parameter property: parameter properties
@@ -203,8 +212,8 @@ export class TraceBuilder {
     this.#meta = meta;
   }
 
-  event<K extends GlassesEventName>(tMs: number, event: K, payload: GlassesEvents[K]): this {
-    this.#events.push({ tMs, event, payload });
+  event<K extends keyof Events & string>(tMs: number, event: K, payload: Events[K]): this {
+    this.#events.push({ tMs, event: event as GlassesEventName, payload });
     return this;
   }
 

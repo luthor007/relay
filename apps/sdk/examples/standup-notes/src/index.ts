@@ -1,7 +1,7 @@
 /**
- * Standup Notes — a complete Relay app in 60 lines.
+ * Standup Notes — a complete Relay app in 80 lines.
  *
- * Shows the three things that make the platform different:
+ * Shows the four things that make the platform different:
  *
  *   1. It reads the user's memory directly. No integration, no OAuth, no
  *      "connect your calendar" — the transcript is already there because the
@@ -10,11 +10,20 @@
  *      author ships no API key and pays for no inference.
  *   3. Declaring the `tool` trigger makes it callable by the agent, so "wrap up
  *      the standup" works without the app owning a wake phrase.
+ *   4. It draws a card on the phone without a line of Swift or Kotlin. This
+ *      file runs on the user's box; `ctx.ui` yields a view the host app draws
+ *      natively. Nothing third-party executes on the handset.
  */
 
-import { defineApp } from "@relay/sdk";
+import { card, defineApp, list } from "@relay/sdk";
 
 export default defineApp({
+  // The same four scopes relay.json asks for. Declaring them here narrows
+  // `ctx` to exactly these capabilities, so reaching for a fifth does not
+  // compile — and a manifest that loses one fails on the first invocation
+  // saying so, instead of throwing on an undefined property.
+  scopes: ["memory.read", "memory.write", "agent.session", "glasses.speaker"],
+
   async onTrigger(ctx) {
     const meeting = await ctx.memory.recentEpisode({ kind: "meeting", within: 60 * 60 * 1000 });
 
@@ -46,6 +55,34 @@ export default defineApp({
     });
 
     ctx.log("saved note", { id, commitments: commitments.length });
+
+    // The card and the list are data, not pixels: the phone draws them with its
+    // own native controls, identically on iOS and Android.
+    //
+    // `ctx.ui` is optional for the same reason every capability is optional —
+    // a box with no phone paired has nowhere to draw, and an absent capability
+    // is honest where a silently-dropped frame is not.
+    await ctx.ui?.render({
+      vocabulary: 1,
+      blocks: [
+        card("Standup", {
+          body: summary,
+          fields: [{ label: "Length", value: `${durationMinutes(meeting)} min` }],
+        }),
+        ...(commitments.length > 0
+          ? [
+              list(
+                commitments.slice(0, 20).map((c) => ({
+                  title: c.text,
+                  subtitle: c.to,
+                  detail: c.dueAt?.toLocaleDateString(),
+                })),
+                { title: plural(commitments.length, "commitment") },
+              ),
+            ]
+          : []),
+      ],
+    });
 
     // Only offer to read them back if there is something worth hearing. A
     // spoken "zero commitments" is noise in someone's ear.

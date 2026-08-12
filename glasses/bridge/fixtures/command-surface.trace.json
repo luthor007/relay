@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "device": {
+    "model": "M01 Pro",
+    "firmware": "synthetic"
+  },
+  "notes": "Synthetic device-console session. Every frame is a real encoded packet (CRC-16/MODBUS, init 0xFFFF) so glasses/protocol can decode it. Response payload layouts are only filled in where the spec attests them — the wake word list (Index/Type/Len/Value) and the settings pairs. Everything else is an ack with an empty payload and says so.",
+  "frames": [
+    {
+      "tMs": 100,
+      "dir": "tx",
+      "hex": "a5060005000100000001b2",
+      "note": "GET_SUPPORTED_FEATURES"
+    },
+    {
+      "tMs": 180,
+      "dir": "rx",
+      "hex": "a506000500020100005036",
+      "note": "ack — capability bitmap layout unverified"
+    },
+    {
+      "tMs": 300,
+      "dir": "tx",
+      "hex": "a50600010001020000a1f6",
+      "note": "GET_PRODUCT_INFO"
+    },
+    {
+      "tMs": 360,
+      "dir": "rx",
+      "hex": "a50600010002030000f072",
+      "note": "ack — string payload unverified"
+    },
+    {
+      "tMs": 400,
+      "dir": "tx",
+      "hex": "a5060002000104000041c4",
+      "note": "GET_PRODUCT_MODEL"
+    },
+    {
+      "tMs": 460,
+      "dir": "rx",
+      "hex": "a506000200020500001040",
+      "note": "ack — string payload unverified"
+    },
+    {
+      "tMs": 500,
+      "dir": "tx",
+      "hex": "a50600030001060000e1d5",
+      "note": "GET_VERSION"
+    },
+    {
+      "tMs": 560,
+      "dir": "rx",
+      "hex": "a50600030002070000b051",
+      "note": "ack — string payload unverified"
+    },
+    {
+      "tMs": 600,
+      "dir": "tx",
+      "hex": "a5060004000108000081a1",
+      "note": "GET_HARDWARE_INFO"
+    },
+    {
+      "tMs": 660,
+      "dir": "rx",
+      "hex": "a50600040002090000d025",
+      "note": "ack — string payload unverified"
+    },
+    {
+      "tMs": 700,
+      "dir": "tx",
+      "hex": "a506000600010a00002183",
+      "note": "GET_DEVICE_NAME"
+    },
+    {
+      "tMs": 760,
+      "dir": "rx",
+      "hex": "a506000600020b00007007",
+      "note": "ack — string payload unverified"
+    },
+    {
+      "tMs": 900,
+      "dir": "tx",
+      "hex": "a506000101010c0000fdf5",
+      "note": "GET_BATTERY"
+    },
+    {
+      "tMs": 1100,
+      "dir": "tx",
+      "hex": "a506001c09010d00004e79",
+      "note": "GET_DISK_INFO"
+    },
+    {
+      "tMs": 1300,
+      "dir": "tx",
+      "hex": "a506001609010e0000bed3",
+      "note": "GET_FILE_COUNT"
+    },
+    {
+      "tMs": 1600,
+      "dir": "tx",
+      "hex": "a50600010f010f00006434",
+      "note": "GET_WAKEWORD_LIST"
+    },
+    {
+      "tMs": 1700,
+      "dir": "rx",
+      "hex": "a53700010f0210310000000b686579206368617467707401010f616e73776572207468652063616c6c02020e74616b6520612070696374757265115b",
+      "note": "Index/Type/Len/Value entries — the firmware-fixed list"
+    },
+    {
+      "tMs": 1800,
+      "dir": "tx",
+      "hex": "a50600020f011100000401",
+      "note": "GET_WAKEWORD_SETTING"
+    },
+    {
+      "tMs": 1880,
+      "dir": "rx",
+      "hex": "a50c00020f0212060000010100020065cd",
+      "note": "GET_WAKEWORD_SETTING"
+    },
+    {
+      "tMs": 2000,
+      "dir": "tx",
+      "hex": "a50800030f0113020000007ab4",
+      "note": "disable 'hey chatgpt'"
+    },
+    {
+      "tMs": 2300,
+      "dir": "tx",
+      "hex": "a506000103011400000432",
+      "note": "GET_WEAR_DETECTION"
+    },
+    {
+      "tMs": 2400,
+      "dir": "tx",
+      "hex": "a5070002030115010001913f",
+      "note": "SET_WEAR_DETECTION"
+    },
+    {
+      "tMs": 2500,
+      "dir": "tx",
+      "hex": "a50600070e011600008855",
+      "note": "GET_RECORDING_PROMPT"
+    },
+    {
+      "tMs": 2600,
+      "dir": "tx",
+      "hex": "a50700060e0117010001d45a",
+      "note": "audible consent cue on"
+    },
+    {
+      "tMs": 2700,
+      "dir": "tx",
+      "hex": "a506000a0e01180000e88b",
+      "note": "GET_CALL_AUTO_RECORD"
+    },
+    {
+      "tMs": 2800,
+      "dir": "tx",
+      "hex": "a50700090e0119010000e872",
+      "note": "off — two-party consent"
+    },
+    {
+      "tMs": 2900,
+      "dir": "tx",
+      "hex": "a506000106011a0000a9f1",
+      "note": "GET_KEY_FUNCTIONS"
+    },
+    {
+      "tMs": 3000,
+      "dir": "tx",
+      "hex": "a507000206011b010006d240",
+      "note": "double-tap -> aiAssistant"
+    },
+    {
+      "tMs": 3200,
+      "dir": "tx",
+      "hex": "a507000107011c010001a027",
+      "note": "FIND_DEVICE"
+    },
+    {
+      "tMs": 3400,
+      "dir": "rx",
+      "hex": "a507000207031d010001eb1b",
+      "note": "FIND_DEVICE_REPORT"
+    }
+  ],
+  "events": [
+    {
+      "tMs": 0,
+      "event": "connectionChanged",
+      "payload": "connected"
+    },
+    {
+      "tMs": 760,
+      "event": "firmwareVersion",
+      "payload": "2.00.04"
+    },
+    {
+      "tMs": 980,
+      "event": "battery",
+      "payload": {
+        "percent": 92,
+        "charging": false
+      }
+    },
+    {
+      "tMs": 1180,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 3650722201.6
+      }
+    },
+    {
+      "tMs": 1360,
+      "event": "mediaCounts",
+      "payload": {
+        "photos": 12,
+        "videos": 1,
+        "recordings": 4,
+        "totalBytes": 671088640
+      }
+    },
+    {
+      "tMs": 2060,
+      "event": "wakeWordSettingsChanged",
+      "payload": [
+        {
+          "index": 0,
+          "enabled": false
+        },
+        {
+          "index": 1,
+          "enabled": false
+        },
+        {
+          "index": 2,
+          "enabled": false
+        }
+      ]
+    },
+    {
+      "tMs": 3460,
+      "event": "findDeviceChanged",
+      "payload": true
+    }
+  ]
+}

@@ -42,15 +42,19 @@ internal class CaptureNotifications(private val context: Context) {
         }
     }
 
-    fun build(state: CaptureState): Notification {
-        val stopIntent = PendingIntent.getService(
-            context,
-            0,
-            Intent(context, RelayCaptureService::class.java)
-                .setAction(RelayCaptureService.ACTION_STOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+    private fun action(requestCode: Int, action: String, label: Int): Notification.Action =
+        Notification.Action.Builder(
+            null,
+            context.getString(label),
+            PendingIntent.getService(
+                context,
+                requestCode,
+                Intent(context, RelayCaptureService::class.java).setAction(action),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            ),
+        ).build()
 
+    fun build(state: CaptureState): Notification {
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(context, CHANNEL_ID)
         } else {
@@ -58,37 +62,54 @@ internal class CaptureNotifications(private val context: Context) {
             Notification.Builder(context)
         }
 
-        return builder
+        builder
             .setContentTitle(title(state))
             .setContentText(detail(state))
             .setSmallIcon(R.drawable.ic_relay_capture)
             .setOngoing(true)
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
-            .addAction(
-                Notification.Action.Builder(
-                    null,
-                    context.getString(R.string.relay_action_stop),
-                    stopIntent,
-                ).build(),
+
+        // `ARCHITECTURE.md` §6 says capture defaults off in a new location
+        // "until confirmed". The confirmation has to be reachable from wherever
+        // the user is — which, for someone wearing glasses and holding nothing,
+        // is the notification shade rather than a screen in an app they would
+        // have to go and open.
+        val question = state.consentQuestion
+        if (question != null) {
+            builder.addAction(
+                action(1, RelayCaptureService.ACTION_CONSENT_YES, R.string.relay_action_consent_yes),
             )
-            .build()
+            builder.addAction(
+                action(2, RelayCaptureService.ACTION_CONSENT_NO, R.string.relay_action_consent_no),
+            )
+        }
+
+        builder.addAction(action(0, RelayCaptureService.ACTION_STOP, R.string.relay_action_stop))
+        return builder.build()
     }
 
     fun update(state: CaptureState) = manager.notify(ID, build(state))
 
     /** Never claims to be recording when it is not, and vice versa. */
-    private fun title(state: CaptureState): String = context.getString(
-        when {
-            state.recording -> R.string.relay_title_recording
-            state.connection == ConnectionState.Connected -> R.string.relay_title_connected
-            state.connection == ConnectionState.Reconnecting -> R.string.relay_title_reconnecting
-            state.connection == ConnectionState.Connecting -> R.string.relay_title_connecting
-            else -> R.string.relay_title_idle
-        },
-    )
+    private fun title(state: CaptureState): String {
+        // The question outranks everything else, including "Connected". A
+        // notification that reads as normal while capture is silently waiting
+        // for an answer is the state this whole path exists to make visible.
+        state.consentQuestion?.let { return it }
+        return context.getString(
+            when {
+                state.recording -> R.string.relay_title_recording
+                state.connection == ConnectionState.Connected -> R.string.relay_title_connected
+                state.connection == ConnectionState.Reconnecting -> R.string.relay_title_reconnecting
+                state.connection == ConnectionState.Connecting -> R.string.relay_title_connecting
+                else -> R.string.relay_title_idle
+            },
+        )
+    }
 
     private fun detail(state: CaptureState): String {
+        if (state.consentQuestion != null && state.consentWhy != null) return state.consentWhy
         val parts = buildList {
             if (state.recording && state.connection != ConnectionState.Connected) {
                 // The important, non-obvious case: recording continues on the

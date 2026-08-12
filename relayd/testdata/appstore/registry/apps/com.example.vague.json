@@ -1,0 +1,27 @@
+{
+  "manifest": {
+    "id": "com.example.vague",
+    "name": "Vague",
+    "version": "1.0.0",
+    "description": "Does something.",
+    "author": {
+      "name": "Nobody"
+    },
+    "permissions": [
+      {
+        "scope": "memory.read",
+        "reason": "Memory."
+      }
+    ],
+    "triggers": [
+      {
+        "type": "phrase",
+        "match": "vague"
+      }
+    ]
+  },
+  "source": {
+    "git": "https://github.com/example/vague",
+    "rev": "v1.0.0"
+  }
+}

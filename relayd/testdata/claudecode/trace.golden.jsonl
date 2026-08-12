@@ -1,0 +1,13 @@
+{"seq":1,"kind":"turn_started","turn":"turn-1","ping":"none"}
+{"seq":2,"kind":"text_delta","turn":"turn-1","ping":"none","text":"I"}
+{"seq":3,"kind":"text_delta","turn":"turn-1","ping":"none","text":"'ll run"}
+{"seq":4,"kind":"text_delta","turn":"turn-1","ping":"none","text":" that command."}
+{"seq":5,"kind":"tool_started","turn":"turn-1","ping":"none","tool_id":"toolu_01K6aFPPHkeKKq9NsQjga28a","tool":"Bash","target":"echo hello-from-relay-fixture","raw_input":{"command":"echo hello-from-relay-fixture","description":"Echo relay fixture string"}}
+{"seq":6,"kind":"tool_output","turn":"turn-1","ping":"none","tool_id":"toolu_01K6aFPPHkeKKq9NsQjga28a","chunk":"hello-from-relay-fixture","status":"completed"}
+{"seq":7,"kind":"text_delta","turn":"turn-1","ping":"none","text":"D"}
+{"seq":8,"kind":"text_delta","turn":"turn-1","ping":"none","text":"ONE"}
+{"seq":9,"kind":"turn_completed","turn":"turn-1","ping":"informational","ok":true,"stop_reason":"end_turn","duration_ms":5481,"usage":{"cost_usd":"0.17959350000000002","input_tokens":"15109","cached_input_tokens":"51997","output_tokens":"101","total_tokens":"67207","reasoning_output_tokens":"nil","context_window":"nil"}}
+{"seq":10,"kind":"turn_started","turn":"turn-2","ping":"none"}
+{"seq":11,"kind":"text_delta","turn":"turn-2","ping":"none","text":"S"}
+{"seq":12,"kind":"text_delta","turn":"turn-2","ping":"none","text":"ECOND-TURN"}
+{"seq":13,"kind":"turn_completed","turn":"turn-2","ping":"informational","ok":true,"stop_reason":"end_turn","duration_ms":1490,"usage":{"cost_usd":"0.01734350000000001","input_tokens":"30","cached_input_tokens":"33607","output_tokens":"10","total_tokens":"33647","reasoning_output_tokens":"nil","context_window":"nil"}}

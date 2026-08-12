@@ -1,0 +1,18 @@
+{
+  "oc-9001": {
+    "title": "trace the BLE MTU negotiation",
+    "cwd": "/home/user/src/relay",
+    "model": "claude-sonnet-4",
+    "agent": "main",
+    "createdAt": "2026-08-02T11:00:00Z",
+    "updatedAt": "2026-08-02T12:10:00Z",
+    "messageCount": 6
+  },
+  "oc-9002": {
+    "title": "one-off question",
+    "cwd": "/home/user/src/relay",
+    "createdAt": "2026-08-03T08:00:00Z",
+    "updatedAt": "2026-08-03T08:02:00Z",
+    "messageCount": 2
+  }
+}

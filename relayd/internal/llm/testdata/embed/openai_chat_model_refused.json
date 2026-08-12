@@ -1,0 +1,7 @@
+{
+  "error": {
+    "message": "This model does not support the embeddings endpoint.",
+    "type": "invalid_request_error",
+    "code": "model_not_supported"
+  }
+}

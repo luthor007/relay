@@ -53,10 +53,18 @@ class ConnectionSupervisorTest {
         supervisor.start()
         transport.connect()
 
+        // The supervisor's collector is a coroutine that has not been dispatched
+        // yet. Events are delivered with tryEmit onto a zero-replay SharedFlow,
+        // so anything emitted before it subscribes is dropped on the floor —
+        // asserting without this passes only by luck of scheduling.
+        testScheduler.runCurrent()
+
         transport.simulateWear(true)
+        testScheduler.runCurrent()
         assertTrue("wear should begin capture", supervisor.capture.value.worn)
 
         transport.simulateWear(false)
+        testScheduler.runCurrent()
         assertEquals(false, supervisor.capture.value.worn)
 
         supervisor.stop()
@@ -73,15 +81,43 @@ class ConnectionSupervisorTest {
 
         supervisor.start()
         transport.connect()
+        testScheduler.runCurrent()
+
         transport.simulateWear(true)
         transport.startLocalRecording()
+        testScheduler.runCurrent()
+        assertTrue("precondition: should be recording", supervisor.capture.value.recording)
 
         transport.simulateDisconnect()
+        testScheduler.runCurrent()
 
         assertTrue(
             "recording must survive a dropped link",
             supervisor.capture.value.recording,
         )
+        assertEquals(ConnectionState.Reconnecting, supervisor.state.value)
         supervisor.stop()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `stop cancels the event collector rather than leaking it`() = runTest {
+        // Every start/stop cycle used to leave a live collector behind, because
+        // observeEvents launched into the outer scope instead of the supervisor's
+        // own job. Two of them mutating the same state is a race that only shows
+        // up as capture flapping on and off.
+        val transport = MockGlassesTransport(connectDelayMs = 0)
+        val supervisor = ConnectionSupervisor(transport, this)
+
+        supervisor.start()
+        testScheduler.runCurrent()
+        supervisor.stop()
+        testScheduler.runCurrent()
+
+        // With the collector gone, a wear event cannot move capture state.
+        transport.simulateWear(true)
+        testScheduler.runCurrent()
+
+        assertEquals(false, supervisor.capture.value.worn)
     }
 }

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      A dark-only theme. This is a deliberate product decision rather than a
+      shortcut: the recording indicator is an amber dot whose entire job is to be
+      unmistakable, and on a light background it reads as a warning icon instead
+      of a live state.
+    -->
+    <style name="Theme.Relay" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/relay_ground</item>
+        <item name="android:navigationBarColor">@color/relay_ground</item>
+        <item name="android:windowBackground">@color/relay_ground</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+    </style>
+
+</resources>

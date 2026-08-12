@@ -1,0 +1,4 @@
+{"role": "user", "content": "the glasses drop to 23-byte MTU after reconnect"}
+{"role": "assistant", "content": [{"type": "text", "text": "That is the default until renegotiation; the bridge has to request 247 again."}]}
+{"type": "tool_call", "tool": "read_file", "name": "bridge/ble.ts"}
+{"role": "assistant", "text": "Fixed in the reconnect path."}

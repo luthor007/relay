@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Required by NEHotspotConfigurationManager, which is how the phone joins the
+	  glasses' own access point for the nightly sync (docs/APPS-SCOPE.md §3.1).
+
+	  Worth knowing before the first device build: this entitlement is not
+	  granted by a plain personal team. It has to be enabled on the App ID in the
+	  developer portal, and a provisioning profile that predates it will fail to
+	  install with a message that does not mention hotspots. That is the second
+	  most likely way the first hardware session gets lost to tooling, after the
+	  arm64-only frameworks.
+
+	  Not requested, deliberately:
+	    com.apple.developer.networking.wifi-info — reading the current SSID needs
+	    it, and we do not read the SSID. We know which network we asked to join.
+	-->
+	<key>com.apple.developer.networking.HotspotConfiguration</key>
+	<true/>
+</dict>
+</plist>

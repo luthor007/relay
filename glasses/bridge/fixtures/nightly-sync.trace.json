@@ -1,0 +1,325 @@
+{
+  "version": 1,
+  "device": {
+    "model": "M01 Pro",
+    "firmware": "synthetic"
+  },
+  "notes": "Synthetic nightly sync, phase 1 of 2. While the AP is open the phone has no uplink of its own, so nothing can be pushed to relayd until it closes. 173 MB at 2 MB/s is ~87 s; the same file over BLE would be ~16 h.",
+  "frames": [
+    {
+      "tMs": 800,
+      "dir": "tx",
+      "hex": "a50600010e01260000883c",
+      "note": "GET_FILE_LIST"
+    },
+    {
+      "tMs": 1000,
+      "dir": "tx",
+      "hex": "a507000b090127010001062d",
+      "note": "open the glasses' AP"
+    },
+    {
+      "tMs": 1200,
+      "dir": "rx",
+      "hex": "a514000c0903280e005143476c61737365732d4d4f434b3e93",
+      "note": "AP_SSID_REPORT"
+    },
+    {
+      "tMs": 1260,
+      "dir": "rx",
+      "hex": "a50e000d09032908003132333435363738278b",
+      "note": "AP_PASSWORD_REPORT"
+    },
+    {
+      "tMs": 1400,
+      "dir": "tx",
+      "hex": "a50700010c012a0100006f14",
+      "note": "REC_0001.opus"
+    },
+    {
+      "tMs": 92702,
+      "dir": "tx",
+      "hex": "a507000b09012b010000c4bd",
+      "note": "close the AP — phone gets its uplink back"
+    }
+  ],
+  "events": [
+    {
+      "tMs": 0,
+      "event": "connectionChanged",
+      "payload": "connected"
+    },
+    {
+      "tMs": 200,
+      "event": "battery",
+      "payload": {
+        "percent": 41,
+        "charging": true
+      }
+    },
+    {
+      "tMs": 400,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 4113563648
+      }
+    },
+    {
+      "tMs": 1100,
+      "event": "wifiAccessPointChanged",
+      "payload": {
+        "ssid": "QCGlasses-MOCK",
+        "password": "12345678",
+        "host": "192.168.31.1",
+        "macAddress": "02:00:00:00:00:00",
+        "open": true,
+        "phoneUplinkSuspended": true
+      }
+    },
+    {
+      "tMs": 1150,
+      "event": "wifiOperation",
+      "payload": {
+        "operation": "apOpen",
+        "ok": true
+      }
+    },
+    {
+      "tMs": 6439,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 10077980,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 11478,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 20155961,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 16517,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 30233941,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 21556,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 40311922,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 26595,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 50389902,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 31634,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 60467883,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 36673,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 70545863,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 41712,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 80623844,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 46751,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 90701824,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 51790,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 100779804,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 56829,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 110857785,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 61868,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 120935765,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 66907,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 131013746,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 71946,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 141091726,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 76985,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 151169707,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 82024,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 161247687,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 87063,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 171325668,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 92102,
+      "event": "fileTransferProgress",
+      "payload": {
+        "id": 1,
+        "name": "REC_0001.opus",
+        "totalBytes": 181403648,
+        "receivedBytes": 181403648,
+        "via": "wifiAp",
+        "retries": 0
+      }
+    },
+    {
+      "tMs": 92782,
+      "event": "wifiAccessPointChanged",
+      "payload": {
+        "ssid": "QCGlasses-MOCK",
+        "password": "12345678",
+        "host": "192.168.31.1",
+        "macAddress": "02:00:00:00:00:00",
+        "open": false,
+        "phoneUplinkSuspended": false
+      }
+    },
+    {
+      "tMs": 92822,
+      "event": "wifiOperation",
+      "payload": {
+        "operation": "apClose",
+        "ok": true
+      }
+    }
+  ]
+}

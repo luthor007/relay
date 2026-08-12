@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Relay</string>
+
+    <!--
+      Consent copy. The rule this screen is written to: never describe the state
+      of a microphone in language vaguer than the truth. Quebec's Law 25 is the
+      legal floor here (ARCHITECTURE.md §6), but the product reason is simpler —
+      a person wearing a recording device has to be able to tell, at a glance and
+      without trusting us, whether it is on.
+    -->
+    <string name="consent_title">Before you start</string>
+    <string name="consent_body">
+        Relay records audio from your glasses while you wear them. The glasses show a light
+        when they are recording, and you cannot turn that light off from this app.\n\n
+        Recording keeps running on the glasses even when your phone is out of range —
+        the day is stored on the glasses and syncs later.\n\n
+        In Québec and many other places, recording a conversation you are not part of is
+        illegal. Recording one you are part of is not. That distinction is yours to keep.
+    </string>
+    <string name="consent_accept">I understand — enable capture</string>
+    <string name="consent_decline">Not now</string>
+
+    <!--
+      The in-app half of the running consent question. The same two answers as
+      the notification, worded identically: a user who taps "Record here" in the
+      shade and sees something else in the app has been asked two questions.
+    -->
+    <string name="consent_prompt_yes">Record here</string>
+    <string name="consent_prompt_no">Not now</string>
+
+    <string name="perm_title">Permissions Relay needs</string>
+    <string name="perm_body">Each one maps to something you can see in the app.</string>
+    <string name="perm_grant">Grant</string>
+    <string name="perm_mic">Microphone — recording audio from the glasses</string>
+    <string name="perm_bt">Nearby devices — finding and holding the link to the glasses</string>
+    <string name="perm_notif">Notifications — the always-visible recording indicator</string>
+
+    <string name="battery_title">Keep capture alive</string>
+    <string name="battery_body">
+        Android stops background apps to save power. Without an exemption, capture stops
+        some time after you lock your phone — usually overnight, silently.
+    </string>
+    <string name="battery_exempt">Allow background running</string>
+    <string name="battery_ok">Background running allowed</string>
+    <string name="battery_oem_open">Open %1$s settings</string>
+</resources>

@@ -53,6 +53,12 @@ sealed interface GlassesEvent {
     data class Touch(val action: String) : GlassesEvent
     data class Battery(val percent: Int, val charging: Boolean) : GlassesEvent
     data class RecordingState(val recording: Boolean, val durationSeconds: Int) : GlassesEvent
+    /**
+     * Text the **app's** recogniser produced, re-emitted here so every screen
+     * reads one stream. Not device ASR — the glasses have none. See
+     * `SYSTEM.md` §7b: `0x0803`/`0x0805` report that the wearer wants to talk,
+     * and every verb in them belongs to the app.
+     */
     data class Transcript(val text: String) : GlassesEvent
     data class AudioChunk(val data: ByteArray, val sequence: Int) : GlassesEvent {
         // ByteArray in a data class needs these or equality is identity-based,
@@ -102,8 +108,35 @@ object TransportProvider {
         override ?: if (BuildConfig.USE_MOCK_GLASSES) {
             MockGlassesTransport()
         } else {
-            VendorGlassesTransport(context.applicationContext)
+            vendorTransport(context.applicationContext)
         }
+
+    /**
+     * Loaded reflectively, because `VendorGlassesTransport` only exists in builds
+     * that had the proprietary AAR on disk (see the module's build.gradle.kts).
+     * A direct reference would make `main` fail to compile without it, which
+     * would defeat the point of keeping the vendor SDK out of the tree.
+     *
+     * Falling back to the mock here would be much worse than failing: a release
+     * build that silently reports fabricated battery levels and never connects to
+     * anything is indistinguishable from working software until a user relies on it.
+     */
+    private fun vendorTransport(context: Context): GlassesTransport {
+        check(BuildConfig.HAS_VENDOR_SDK) {
+            "This build was compiled without LIB_GLASSES_SDK, so it cannot talk to " +
+                "glasses. Copy the AAR to apps/android/libs/ and rebuild — see " +
+                "apps/android/README.md."
+        }
+        return try {
+            Class.forName(VENDOR_TRANSPORT)
+                .getConstructor(Context::class.java)
+                .newInstance(context) as GlassesTransport
+        } catch (e: ReflectiveOperationException) {
+            throw IllegalStateException("$VENDOR_TRANSPORT could not be loaded", e)
+        }
+    }
+
+    private const val VENDOR_TRANSPORT = "glass.relay.bridge.vendor.VendorGlassesTransport"
 }
 
 /**

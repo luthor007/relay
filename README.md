@@ -10,7 +10,11 @@ about this yesterday?"*
 This repository is the whole stack: the BLE protocol, the SDK, the host apps, and
 everything you need to build on it or run it yourself.
 
-**[relay-vert-nu.vercel.app](https://relay-vert-nu.vercel.app) · [Preorder — $249](https://relay-vert-nu.vercel.app#buy)**
+**[relay-vert-nu.vercel.app](https://relay-vert-nu.vercel.app) · [Buy — $249](https://relay-vert-nu.vercel.app#buy)**
+
+The software is free and open source. Run it on any machine that stays on and you
+pay nothing; if you have no machine to spare, Relay Cloud runs one for $39/mo or
+$429/yr. There is no tier in between.
 
 ---
 
@@ -26,6 +30,7 @@ day and can act on it.
 ## What's here
 
 ```
+relayd/               The orchestrator — runs your coding agents, Go
 glasses/protocol/     BLE protocol codec — all 92 commands, 92 tests, Python
 glasses/bridge/       TypeScript transport interface + hardware-free mock
 apps/sdk/             @relay/sdk — build apps for Relay One
@@ -33,6 +38,17 @@ apps/android/         Always-on capture service (Kotlin)
 tools/                Device probe and session capture instruments
 docs/                 Architecture, app platform, protocol notes
 ```
+
+`relayd` is the part that does the work. It speaks to Claude Code, Codex and
+any ACP agent through one interface, keeps their credentials in your OS
+keychain, and never sends a credential to a model — there is a detector in
+front of every path that reaches one. Each adapter has a recorded session in
+`docs/fixtures/adapters/` that its tests replay message by message, so you can
+see exactly what the wire looks like without owning the hardware.
+
+Two things it will not do quietly: it refuses to start an app that can read
+your life and reach the network without a boundary between them, and it
+refuses to expose itself to the network without an explicit flag.
 
 ## Start without hardware
 
@@ -143,15 +159,26 @@ Pre-launch. Founders Edition units ship in 6–8 weeks.
 | | |
 |---|---|
 | Protocol codec | working, 92 tests |
-| Transport + mock | working, 66 tests |
+| Transport + mock | working, 264 tests |
+| Pairing, box link, store-and-forward | working, in the transport package |
 | App SDK | types and manifest validation, 13 tests |
-| Android capture service | written, **not yet compiled** |
-| iOS host app | not started |
-| App runtime | design only |
+| Android capture service | written; its Android-free logic passes 156 tests, the APK is **not yet compiled** |
+| iOS host app | written, **never compiled** — needs macOS |
+| Orchestrator (`relayd`) | working, 45 packages and 1,611 tests |
+| Agent adapters | Claude Code, Codex, ACP — each replays a recorded session |
+| App runtime | working on Linux; two packages fail on macOS, deliberately |
 
 Nothing above is dressed up as further along than it is. See
 [`docs/`](docs/) for what is verified against hardware and what is still an
 estimate.
+
+If you run `go test ./...` in `relayd/` on a Mac, `internal/apps` and
+`internal/appruntime` fail. That is the sandbox doing its job rather than a
+broken build: an app that holds `memory.read` is refused unless the network can
+be isolated from it, and there is no network namespace on macOS reachable
+without cgo. Linux is the supported host. A handful of tests also skip there,
+because the secret-detection corpus is credential-*shaped* by design and stays
+in the private repo — the detector itself ships here and is compiled in.
 
 ## Licence
 

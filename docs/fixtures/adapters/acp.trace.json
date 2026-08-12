@@ -1,0 +1,892 @@
+[
+ {
+  "dir": "meta",
+  "seq": 1,
+  "kind": "meta",
+  "schema": null,
+  "msg": {
+   "provenance": "SCHEMA-DERIVED, NOT RECORDED",
+   "warning": "This is NOT a recorded ACP session. No openclaw, hermes or opencode binary existed on the machine that produced it, so no live probe was possible. Every message below was constructed from the vendored @zed-industries/agent-client-protocol@0.4.5 schema and validated against the definition named in its `schema` field. It is a contract fixture, not evidence of runtime behaviour. A real recording is owed from the author's Mac, one per runtime — ADAPTERS.md §8 tracks it.",
+   "generator": "relayd/testdata/acp/gen_trace.py",
+   "contract": {
+    "runtimes": [
+     "openclaw",
+     "hermes",
+     "opencode"
+    ],
+    "package": "@zed-industries/agent-client-protocol@0.4.5",
+    "schema": "acp-schema.json",
+    "protocolVersion": 1,
+    "transport": "newline-delimited JSON-RPC 2.0 over the agent's stdin/stdout, one message per line, no Content-Length framing",
+    "symmetric": "the agent issues requests to the client as freely as the client issues them to the agent",
+    "launch": {
+     "openclaw": "openclaw acp --session agent:main:main --require-existing",
+     "hermes": "hermes acp",
+     "opencode": "opencode acp"
+    }
+   },
+   "covers": [
+    "initialize and one-round-trip version negotiation",
+    "session/new with an absolute cwd and the shared MCP registry",
+    "all eight session/update variants, including plan and available_commands_update",
+    "session/request_permission answered with `selected`",
+    "an out-of-contract fs/read_text_file answered -32601",
+    "session/cancel: the notification, the mandatory `cancelled` outcome for the outstanding permission request, the flushed update, and stopReason cancelled",
+    "the redirect re-prompt that follows a cancel",
+    "the queued addition delivered after the redirect turn ends"
+   ],
+   "unverified": [
+    "the agentCapabilities each of the three runtimes actually advertises: loadSession and promptCapabilities are per-runtime and per-version, and the values here are the schema's own defaults with loadSession flipped on so the reattach path is exercised at all (ADAPTERS.md §8 item 4)",
+    "the shape of a real session id. OpenClaw's ACP is a bridge in front of the Gateway and its session keys look like `agent:main:main`; Hermes and OpenCode mint their own. The opaque id used here is deliberately neither",
+    "the true interleaving of session/update notifications with the responses around them: the ordering here is one the adapter is written to tolerate, not one anybody observed",
+    "whether any of the three emits agent_thought_chunk at all. It is protocol-native and it is in this trace, which is why the adapter treats CapReasoning as unknown until it sees one",
+    "the fs/read_text_file request at seq 30 is deliberately out of contract — Relay advertises fs and terminal false, so a conforming agent would never send it. It is here because the -32601 refusal is a path the adapter must get right, not because a runtime was seen doing it",
+    "per-turn cost: there is none to record. The word `token` occurs twice in the whole schema, both times in the max_tokens stop reason, so every TurnCompleted derived from this trace carries a nil Usage"
+   ],
+   "shape": {
+    "dir": "meta | send (client to agent) | recv (agent to client)",
+    "kind": "request | notification | response | error | meta",
+    "schema": "the $defs entry this message's params or result was validated against, or null where the contract has none (JSON-RPC error objects)",
+    "msg": "the exact object that appears on the wire, one per line"
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 2,
+  "kind": "request",
+  "method": "initialize",
+  "schema": "acp-schema.json#/$defs/InitializeRequest",
+  "note": "all three client capabilities are declared false on purpose (ADAPTERS.md §4): advertise them and the agent does its file and shell work by calling back over RPC, where nothing obliges it to also appear in session/update",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "method": "initialize",
+   "params": {
+    "protocolVersion": 1,
+    "clientCapabilities": {
+     "fs": {
+      "readTextFile": false,
+      "writeTextFile": false
+     },
+     "terminal": false
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 3,
+  "kind": "response",
+  "schema": "acp-schema.json#/$defs/InitializeResponse",
+  "note": "negotiation is one round trip: the agent answers with our version or with the latest it speaks, and a client that cannot speak the answer must disconnect",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 1,
+   "result": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+     "loadSession": true,
+     "promptCapabilities": {
+      "image": false,
+      "audio": false,
+      "embeddedContext": false
+     },
+     "mcpCapabilities": {
+      "http": false,
+      "sse": false
+     }
+    },
+    "authMethods": [
+     {
+      "id": "oauth-personal",
+      "name": "Log in with your account",
+      "description": "Device code flow; belongs in the installer, not a voice turn"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 4,
+  "kind": "request",
+  "method": "session/new",
+  "schema": "acp-schema.json#/$defs/NewSessionRequest",
+  "note": "cwd must be absolute; mcpServers is where MEMORY.md §7's shared registry is injected, over stdio, which is the one transport every agent must support",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "method": "session/new",
+   "params": {
+    "cwd": "/Users/USER/src/relay",
+    "mcpServers": [
+     {
+      "name": "relay-registry",
+      "command": "/usr/local/bin/relay",
+      "args": [
+       "mcp",
+       "serve"
+      ],
+      "env": [
+       {
+        "name": "RELAY_SCOPE",
+        "value": "session"
+       }
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 5,
+  "kind": "response",
+  "schema": "acp-schema.json#/$defs/NewSessionResponse",
+  "note": "`models` is absent: it and session/set_model are the only UNSTABLE members of the surface",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 2,
+   "result": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "modes": {
+     "currentModeId": "ask",
+     "availableModes": [
+      {
+       "id": "ask",
+       "name": "Ask"
+      },
+      {
+       "id": "code",
+       "name": "Code"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 6,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "ACP's answer to SYSTEM.md §9 problem 6: the command set is pushed when it changes rather than polled. It has no home among the nine normalized events, so the adapter stores it and hands it to a hook",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "available_commands_update",
+     "availableCommands": [
+      {
+       "name": "create_plan",
+       "description": "Draft a plan before touching anything"
+      },
+      {
+       "name": "research_codebase",
+       "description": "Read before writing",
+       "input": {
+        "hint": "what to look for"
+       }
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 7,
+  "kind": "request",
+  "method": "session/prompt",
+  "schema": "acp-schema.json#/$defs/PromptRequest",
+  "note": "this one request does not resolve until the whole turn is over — every model call, every tool, every permission round trip happens inside it",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "method": "session/prompt",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "prompt": [
+     {
+      "type": "text",
+      "text": "Get the flaky auth test passing, then run the suite."
+     }
+    ]
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 8,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "echo of what we just sent; never spoken, and there is no normalized event for user text",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "user_message_chunk",
+     "content": {
+      "type": "text",
+      "text": "Get the flaky auth test passing, then run the suite."
+     }
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 9,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "Reasoning — never spoken, on any runtime. Its arrival is also the only evidence that this runtime emits thoughts at all, so the adapter narrows CapReasoning here",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "agent_thought_chunk",
+     "content": {
+      "type": "text",
+      "text": "The failure looks like a clock skew in the token fixture."
+     }
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 10,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "PlanUpdated, native. Structured plans exist on four of five runtimes, so plan-based narration is the normal path rather than the exception",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "plan",
+     "entries": [
+      {
+       "content": "Reproduce the flaky auth test",
+       "priority": "high",
+       "status": "in_progress"
+      },
+      {
+       "content": "Freeze the clock in the token fixture",
+       "priority": "high",
+       "status": "pending"
+      },
+      {
+       "content": "Run the full suite",
+       "priority": "medium",
+       "status": "pending"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 11,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "TextDelta — the input to streaming TTS",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "agent_message_chunk",
+     "content": {
+      "type": "text",
+      "text": "Reproducing the failure first. "
+     }
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 12,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "ToolStarted. `title` is the human-readable part and `kind` the category; there is no tool *name* anywhere in ACP",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "tool_call",
+     "toolCallId": "call_1",
+     "title": "Run npm test -- auth",
+     "kind": "execute",
+     "status": "pending",
+     "rawInput": {
+      "command": "npm test -- auth"
+     }
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 13,
+  "kind": "request",
+  "method": "session/request_permission",
+  "schema": "acp-schema.json#/$defs/RequestPermissionRequest",
+  "note": "a request, not a notification: the agent blocks on our answer for as long as we take, which is what makes voice-answerable approval real rather than aspirational",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 101,
+   "method": "session/request_permission",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "toolCall": {
+     "toolCallId": "call_1",
+     "title": "Run npm test -- auth",
+     "kind": "execute",
+     "status": "pending",
+     "rawInput": {
+      "command": "npm test -- auth"
+     }
+    },
+    "options": [
+     {
+      "optionId": "o1",
+      "name": "Allow",
+      "kind": "allow_once"
+     },
+     {
+      "optionId": "o2",
+      "name": "Always allow",
+      "kind": "allow_always"
+     },
+     {
+      "optionId": "o3",
+      "name": "Reject",
+      "kind": "reject_once"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 14,
+  "kind": "response",
+  "schema": "acp-schema.json#/$defs/RequestPermissionResponse",
+  "note": "o2 is a standing grant and the orchestrator never selects one on the user's behalf (ORCHESTRATOR.md §4b); it is still offered, a human just has to pick it",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 101,
+   "result": {
+    "outcome": {
+     "outcome": "selected",
+     "optionId": "o1"
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 15,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "an update may carry only a toolCallId with everything else absent, so the adapter merges onto the tool_call it already has",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "tool_call_update",
+     "toolCallId": "call_1",
+     "status": "in_progress"
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 16,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "`content` replaces the collection rather than appending to it",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "tool_call_update",
+     "toolCallId": "call_1",
+     "status": "completed",
+     "content": [
+      {
+       "type": "content",
+       "content": {
+        "type": "text",
+        "text": "1 failing: auth token expiry"
+       }
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 17,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "a second tool call, this one an edit — no permission request, so this runtime's policy allows edits in the workspace without asking",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "tool_call",
+     "toolCallId": "call_2",
+     "title": "Edit src/auth/token.test.ts",
+     "kind": "edit",
+     "status": "in_progress",
+     "locations": [
+      {
+       "path": "src/auth/token.test.ts",
+       "line": 42
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 18,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "a diff is named rather than expanded: the useful part is which file, not the bytes",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "tool_call_update",
+     "toolCallId": "call_2",
+     "status": "completed",
+     "content": [
+      {
+       "type": "diff",
+       "path": "src/auth/token.test.ts",
+       "oldText": "const now = Date.now()",
+       "newText": "const now = FROZEN_NOW"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 19,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "the agent must send the complete list on every plan update; the client replaces the whole plan rather than merging",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "plan",
+     "entries": [
+      {
+       "content": "Reproduce the flaky auth test",
+       "priority": "high",
+       "status": "completed"
+      },
+      {
+       "content": "Freeze the clock in the token fixture",
+       "priority": "high",
+       "status": "completed"
+      },
+      {
+       "content": "Run the full suite",
+       "priority": "medium",
+       "status": "in_progress"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 20,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "agent_message_chunk",
+     "content": {
+      "type": "text",
+      "text": "Fixed the clock skew. Running the full suite now."
+     }
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 21,
+  "kind": "response",
+  "schema": "acp-schema.json#/$defs/PromptResponse",
+  "note": "the single stopReason *is* the turn boundary; end_turn is the only one of the five that means the work finished",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 3,
+   "result": {
+    "stopReason": "end_turn"
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 22,
+  "kind": "request",
+  "method": "session/prompt",
+  "schema": "acp-schema.json#/$defs/PromptRequest",
+  "note": "",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "method": "session/prompt",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "prompt": [
+     {
+      "type": "text",
+      "text": "Now migrate the whole auth module to the new session store."
+     }
+    ]
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 23,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "agent_message_chunk",
+     "content": {
+      "type": "text",
+      "text": "Starting the migration. "
+     }
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 24,
+  "kind": "request",
+  "method": "session/request_permission",
+  "schema": "acp-schema.json#/$defs/RequestPermissionRequest",
+  "note": "toolCall is a ToolCallUpdate, so only toolCallId is guaranteed: no title, no kind, no rawInput. There is nothing human-readable to read aloud and the adapter must say so rather than infer one",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 102,
+   "method": "session/request_permission",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "toolCall": {
+     "toolCallId": "call_3"
+    },
+    "options": [
+     {
+      "optionId": "p1",
+      "name": "Allow",
+      "kind": "allow_once"
+     },
+     {
+      "optionId": "p2",
+      "name": "Reject",
+      "kind": "reject_once"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 25,
+  "kind": "request",
+  "method": "fs/read_text_file",
+  "schema": "acp-schema.json#/$defs/ReadTextFileRequest",
+  "note": "OUT OF CONTRACT and deliberately so: we advertised fs.readTextFile false, so a conforming agent would never send this. It is here because the refusal is a path the adapter has to get right",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 103,
+   "method": "fs/read_text_file",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "path": "/Users/USER/src/relay/src/auth/session.ts"
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 26,
+  "kind": "error",
+  "schema": null,
+  "note": "visibly refused, never faked. A faked read is a lie the agent then reasons from",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 103,
+   "error": {
+    "code": -32601,
+    "message": "fs/read_text_file is not available: client capability not advertised: relay declares fs.readTextFile, fs.writeTextFile and terminal all false"
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 27,
+  "kind": "notification",
+  "method": "session/cancel",
+  "schema": "acp-schema.json#/$defs/CancelNotification",
+  "note": "the user redirected: \"no, stop, do the smaller thing instead\". A notification, so the acknowledgement is the original session/prompt resolving with cancelled",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/cancel",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001"
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 28,
+  "kind": "response",
+  "schema": "acp-schema.json#/$defs/RequestPermissionResponse",
+  "note": "mandatory, not optional: an outstanding permission request left unanswered means the agent's turn cannot unwind",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 102,
+   "result": {
+    "outcome": {
+     "outcome": "cancelled"
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 29,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "the flush: on cancel the agent stops model requests, aborts tools, and flushes pending session/update notifications *before* resolving. Nothing observed is lost, which is why cancel-and-re-prompt is an acceptable substitute for steering",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "agent_message_chunk",
+     "content": {
+      "type": "text",
+      "text": "Stopping; the store swap was half applied."
+     }
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 30,
+  "kind": "response",
+  "schema": "acp-schema.json#/$defs/PromptResponse",
+  "note": "MUST be returned when the client sends session/cancel, even if the cancellation caused exceptions underneath",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 4,
+   "result": {
+    "stopReason": "cancelled"
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 31,
+  "kind": "request",
+  "method": "session/prompt",
+  "schema": "acp-schema.json#/$defs/PromptRequest",
+  "note": "the redirect: a fresh prompt carrying the merged instruction. Merging is the small model's job — the adapter's job is to make the cancel-then-re-prompt cheap and to say which of the two halves of §4's table it took",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "method": "session/prompt",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "prompt": [
+     {
+      "type": "text",
+      "text": "Forget the migration. Just fix the session store import in src/auth/session.ts."
+     }
+    ]
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 32,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "agent_message_chunk",
+     "content": {
+      "type": "text",
+      "text": "Just the import, then."
+     }
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 33,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "the agent changed its own mode. Surface it: a mode change can change permission behaviour underneath a session the registry believes it understands",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "current_mode_update",
+     "currentModeId": "code"
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 34,
+  "kind": "response",
+  "schema": "acp-schema.json#/$defs/PromptResponse",
+  "note": "",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 5,
+   "result": {
+    "stopReason": "end_turn"
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 35,
+  "kind": "request",
+  "method": "session/prompt",
+  "schema": "acp-schema.json#/$defs/PromptRequest",
+  "note": "the addition that was queued while the cancelled turn was running. It survived both the cancel and the redirect and goes out as its own turn — queued additions are not lost",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "method": "session/prompt",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "prompt": [
+     {
+      "type": "text",
+      "text": "Also update the changelog."
+     }
+    ]
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 36,
+  "kind": "notification",
+  "method": "session/update",
+  "schema": "acp-schema.json#/$defs/SessionNotification",
+  "note": "",
+  "msg": {
+   "jsonrpc": "2.0",
+   "method": "session/update",
+   "params": {
+    "sessionId": "sess_01JQ8Z0RELAYACP0001",
+    "update": {
+     "sessionUpdate": "agent_message_chunk",
+     "content": {
+      "type": "text",
+      "text": "Changelog updated."
+     }
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 37,
+  "kind": "response",
+  "schema": "acp-schema.json#/$defs/PromptResponse",
+  "note": "",
+  "msg": {
+   "jsonrpc": "2.0",
+   "id": 6,
+   "result": {
+    "stopReason": "end_turn"
+   }
+  }
+ }
+]

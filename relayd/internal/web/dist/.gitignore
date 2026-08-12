@@ -1,0 +1,9 @@
+# The console's build output. `npm run build` in ../../../../console writes here
+# and Go's embed picks it up at compile time.
+#
+# Nothing in here is committed except this file, and this file is committed for
+# one reason: //go:embed refuses to compile against a directory that matches no
+# files, so `go build ./...` on a clean clone needs something here. See the
+# package comment in ../web.go for why a placeholder beats a build tag.
+*
+!.gitignore

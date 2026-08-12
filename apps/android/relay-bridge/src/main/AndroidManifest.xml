@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
       The vendor sample declares none of this: it is Activity-only, so capture
@@ -20,12 +21,22 @@
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
 
-    <!-- Audio arrives from the glasses over BLE, but Android still classifies a
-         long-lived capture session as microphone use, and the FGS type below
-         requires the matching permission. -->
+    <!-- All-day capture reads audio off the glasses over BLE and never opens
+         AudioRecord, so the running service declares connectedDevice only. This
+         permission and the FGS type below exist for the phone-side recorder —
+         the wake-word spotter of ARCHITECTURE.md §5.2b — which is opt-in and
+         adds the type at the moment it opens the mic. See
+         RelayCaptureService.promoteToForeground for why that split matters at
+         boot as well as in the status bar. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Foreground service. The typed permissions are mandatory from API 34. -->
+    <!-- Foreground service. The typed permissions are mandatory from API 34,
+         and a service must hold the permission matching every type it declares.
+         Note deliberately absent: FOREGROUND_SERVICE_DATA_SYNC. The nightly
+         WiFi sync runs inside the existing connectedDevice service rather than
+         a dataSync one, because dataSync carries a per-day runtime cap on
+         recent releases and a capture service that stops after N hours is the
+         exact failure this module exists to prevent. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />

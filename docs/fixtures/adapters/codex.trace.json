@@ -1,0 +1,987 @@
+[
+ {
+  "dir": "meta",
+  "seq": 0,
+  "kind": "meta",
+  "provenance": "SCHEMA-DERIVED, NOT RECORDED",
+  "warning": "This is NOT a recorded Codex session. No codex binary existed on the machine that produced it. Every message below was constructed from the vendored codex-cli 0.140.0 schemas and validated against the definition named in its `schema` field. It is a contract fixture, not evidence of runtime behaviour. Replace it with a real `codex app-server` recording on a machine that has Codex installed and authenticated \u2014 ADAPTERS.md \u00a78 tracks that as an open item.",
+  "generator": "relayd/testdata/codex/gen_trace.py",
+  "contract": {
+   "runtime": "codex",
+   "cli_version": "0.140.0",
+   "schemas": [
+    "ClientRequest.json",
+    "ServerNotification.json",
+    "ServerRequest.json"
+   ],
+   "transport": "NDJSON over stdio, one JSON object per line, no Content-Length headers",
+   "envelope": "no `jsonrpc` field: app-server neither sends nor expects one"
+  },
+  "unverified": [
+   "every JSON-RPC *result* payload: generate-json-schema emits params only and there is no ServerResponse.json, so the `result` values below carry schema:null and are the adapter's best reading of the contract (codex-methods.md \u00a72)",
+   "the reply to item/commandExecution/requestApproval is the bare CommandExecutionApprovalDecision value, inferred from an orphaned definition",
+   "wire ordering between a response and the notifications around it: the ordering here is the one the adapter is written to tolerate, not one that was observed"
+  ],
+  "shape": {
+   "dir": "meta | send (client to server) | recv (server to client)",
+   "kind": "request | notification | response | error",
+   "schema": "the definition this message was validated against, or null when the contract has none",
+   "msg": "the exact object that appears on the wire, one per line"
+  },
+  "msg": {}
+ },
+ {
+  "dir": "send",
+  "seq": 1,
+  "kind": "request",
+  "method": "initialize",
+  "schema": "ClientRequest.json#/definitions/InitializeParams",
+  "note": "mandatory and typed; experimentalApi gates item/tool/requestUserInput",
+  "msg": {
+   "id": 1,
+   "method": "initialize",
+   "params": {
+    "clientInfo": {
+     "name": "relay",
+     "version": "0",
+     "title": "Relay"
+    },
+    "capabilities": {
+     "experimentalApi": true,
+     "requestAttestation": false
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 2,
+  "kind": "response",
+  "schema": null,
+  "note": "result shape is not in the vendored contract; the adapter reads nothing from it",
+  "msg": {
+   "id": 1,
+   "result": {}
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 3,
+  "kind": "request",
+  "method": "thread/start",
+  "schema": "ClientRequest.json#/definitions/ThreadStartParams",
+  "note": "both approval settings are always sent explicitly: leaving them to config.toml is how the trap gets switched on under us",
+  "msg": {
+   "id": 2,
+   "method": "thread/start",
+   "params": {
+    "cwd": "/Users/USER/src/relay",
+    "model": "gpt-5-codex",
+    "sandbox": "workspace-write",
+    "approvalPolicy": "on-request",
+    "approvalsReviewer": "user"
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 4,
+  "kind": "notification",
+  "method": "thread/started",
+  "schema": "ServerNotification.json#/definitions/ThreadStartedNotification",
+  "note": "THIS is where the thread id comes from, not the thread/start result",
+  "msg": {
+   "method": "thread/started",
+   "params": {
+    "thread": {
+     "id": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+     "sessionId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a00",
+     "cwd": "/Users/USER/src/relay",
+     "createdAt": 1786000000,
+     "updatedAt": 1786000000,
+     "preview": "",
+     "status": {
+      "type": "idle"
+     },
+     "turns": [],
+     "source": "appServer",
+     "modelProvider": "openai",
+     "cliVersion": "0.140.0",
+     "ephemeral": false
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 5,
+  "kind": "response",
+  "schema": null,
+  "note": "unspecified; deliberately ignored",
+  "msg": {
+   "id": 2,
+   "result": {}
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 6,
+  "kind": "notification",
+  "method": "thread/settings/updated",
+  "schema": "ServerNotification.json#/definitions/ThreadSettingsUpdatedNotification",
+  "note": "the live trap check: approvalPolicy != never and approvalsReviewer == user",
+  "msg": {
+   "method": "thread/settings/updated",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "threadSettings": {
+     "approvalPolicy": "on-request",
+     "approvalsReviewer": "user",
+     "collaborationMode": {
+      "mode": "default",
+      "settings": {
+       "model": "gpt-5-codex"
+      }
+     },
+     "cwd": "/Users/USER/src/relay",
+     "model": "gpt-5-codex",
+     "modelProvider": "openai",
+     "sandboxPolicy": {
+      "type": "workspaceWrite",
+      "networkAccess": false
+     }
+    }
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 7,
+  "kind": "request",
+  "method": "turn/start",
+  "schema": "ClientRequest.json#/definitions/TurnStartParams",
+  "msg": {
+   "id": 3,
+   "method": "turn/start",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "input": [
+     {
+      "type": "text",
+      "text": "check whether the tests pass, then tell me what broke"
+     }
+    ],
+    "clientUserMessageId": "relay-turn-1"
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 8,
+  "kind": "notification",
+  "method": "turn/started",
+  "schema": "ServerNotification.json#/definitions/TurnStartedNotification",
+  "msg": {
+   "method": "turn/started",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turn": {
+     "id": "turn_01HZX8QK4T7N9G",
+     "status": "inProgress",
+     "items": [],
+     "startedAt": 1786000001
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 9,
+  "kind": "response",
+  "schema": null,
+  "note": "unspecified; the turn id came from turn/started",
+  "msg": {
+   "id": 3,
+   "result": {}
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 10,
+  "kind": "notification",
+  "method": "item/started",
+  "schema": "ServerNotification.json#/definitions/ItemStartedNotification",
+  "msg": {
+   "method": "item/started",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "startedAtMs": 1786000001100,
+    "item": {
+     "id": "item_r1",
+     "type": "reasoning"
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 11,
+  "kind": "notification",
+  "method": "item/reasoning/summaryPartAdded",
+  "schema": "ServerNotification.json#/definitions/ReasoningSummaryPartAddedNotification",
+  "msg": {
+   "method": "item/reasoning/summaryPartAdded",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "itemId": "item_r1",
+    "summaryIndex": 0
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 12,
+  "kind": "notification",
+  "method": "item/reasoning/summaryTextDelta",
+  "schema": "ServerNotification.json#/definitions/ReasoningSummaryTextDeltaNotification",
+  "msg": {
+   "method": "item/reasoning/summaryTextDelta",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "itemId": "item_r1",
+    "summaryIndex": 0,
+    "delta": "Running the test suite"
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 13,
+  "kind": "notification",
+  "method": "item/reasoning/summaryPartAdded",
+  "schema": "ServerNotification.json#/definitions/ReasoningSummaryPartAddedNotification",
+  "note": "a part boundary: two separate thoughts, not one sentence",
+  "msg": {
+   "method": "item/reasoning/summaryPartAdded",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "itemId": "item_r1",
+    "summaryIndex": 1
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 14,
+  "kind": "notification",
+  "method": "item/reasoning/summaryTextDelta",
+  "schema": "ServerNotification.json#/definitions/ReasoningSummaryTextDeltaNotification",
+  "msg": {
+   "method": "item/reasoning/summaryTextDelta",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "itemId": "item_r1",
+    "summaryIndex": 1,
+    "delta": "then reading whatever fails"
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 15,
+  "kind": "notification",
+  "method": "item/reasoning/textDelta",
+  "schema": "ServerNotification.json#/definitions/ReasoningTextDeltaNotification",
+  "note": "raw thinking: normalized to Reasoning, never spoken",
+  "msg": {
+   "method": "item/reasoning/textDelta",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "itemId": "item_r1",
+    "contentIndex": 0,
+    "delta": "The user wants the failing tests, so run go test first."
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 16,
+  "kind": "notification",
+  "method": "item/completed",
+  "schema": "ServerNotification.json#/definitions/ItemCompletedNotification",
+  "note": "already streamed, so the adapter emits nothing here rather than repeating it",
+  "msg": {
+   "method": "item/completed",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "completedAtMs": 1786000002000,
+    "item": {
+     "id": "item_r1",
+     "type": "reasoning",
+     "summary": [
+      "Running the test suite",
+      "then reading whatever fails"
+     ],
+     "content": [
+      "The user wants the failing tests, so run go test first."
+     ]
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 17,
+  "kind": "notification",
+  "method": "turn/plan/updated",
+  "schema": "ServerNotification.json#/definitions/TurnPlanUpdatedNotification",
+  "note": "the agent stating its own plan: the best narration source in the system",
+  "msg": {
+   "method": "turn/plan/updated",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "explanation": "Find out what is failing before changing anything.",
+    "plan": [
+     {
+      "step": "run the test suite",
+      "status": "inProgress"
+     },
+     {
+      "step": "read the failures",
+      "status": "pending"
+     },
+     {
+      "step": "report back",
+      "status": "pending"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 18,
+  "kind": "notification",
+  "method": "item/started",
+  "schema": "ServerNotification.json#/definitions/ItemStartedNotification",
+  "msg": {
+   "method": "item/started",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "startedAtMs": 1786000002100,
+    "item": {
+     "id": "item_c1",
+     "type": "commandExecution",
+     "command": "go test ./...",
+     "commandActions": [
+      {
+       "type": "unknown",
+       "command": "go test ./..."
+      }
+     ],
+     "cwd": "/Users/USER/src/relay",
+     "status": "inProgress",
+     "source": "agent"
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 19,
+  "kind": "request",
+  "method": "item/commandExecution/requestApproval",
+  "schema": "ServerRequest.json#/definitions/CommandExecutionRequestApprovalParams",
+  "note": "blocks app-server until answered; becomes NeedsInput, PING blocking",
+  "msg": {
+   "id": "srv-1",
+   "method": "item/commandExecution/requestApproval",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "itemId": "item_c1",
+    "startedAtMs": 1786000002150,
+    "command": "go test ./...",
+    "cwd": "/Users/USER/src/relay",
+    "approvalId": null,
+    "reason": "the command runs outside the sandbox's write roots"
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 20,
+  "kind": "response",
+  "schema": null,
+  "note": "CommandExecutionApprovalDecision as a bare union value \u2014 inferred from an orphaned definition, see ADAPTERS.md \u00a78 item 7",
+  "msg": {
+   "id": "srv-1",
+   "result": "accept"
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 21,
+  "kind": "notification",
+  "method": "item/commandExecution/outputDelta",
+  "schema": "ServerNotification.json#/definitions/CommandExecutionOutputDeltaNotification",
+  "msg": {
+   "method": "item/commandExecution/outputDelta",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "itemId": "item_c1",
+    "delta": "ok  \tgithub.com/luthor007/relay/relayd/internal/event\t0.004s\n"
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 22,
+  "kind": "notification",
+  "method": "item/commandExecution/outputDelta",
+  "schema": "ServerNotification.json#/definitions/CommandExecutionOutputDeltaNotification",
+  "msg": {
+   "method": "item/commandExecution/outputDelta",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "itemId": "item_c1",
+    "delta": "FAIL\tgithub.com/luthor007/relay/relayd/internal/store\t0.212s\n"
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 23,
+  "kind": "notification",
+  "method": "item/completed",
+  "schema": "ServerNotification.json#/definitions/ItemCompletedNotification",
+  "note": "aggregatedOutput repeats the deltas, so the adapter carries the status and not the bytes",
+  "msg": {
+   "method": "item/completed",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "completedAtMs": 1786000009000,
+    "item": {
+     "id": "item_c1",
+     "type": "commandExecution",
+     "command": "go test ./...",
+     "commandActions": [
+      {
+       "type": "unknown",
+       "command": "go test ./..."
+      }
+     ],
+     "cwd": "/Users/USER/src/relay",
+     "status": "failed",
+     "exitCode": 1,
+     "durationMs": 6850,
+     "aggregatedOutput": "ok  \tgithub.com/luthor007/relay/relayd/internal/event\t0.004s\nFAIL\tgithub.com/luthor007/relay/relayd/internal/store\t0.212s\n",
+     "source": "agent"
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 24,
+  "kind": "notification",
+  "method": "item/started",
+  "schema": "ServerNotification.json#/definitions/ItemStartedNotification",
+  "msg": {
+   "method": "item/started",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "startedAtMs": 1786000009100,
+    "item": {
+     "id": "item_m1",
+     "type": "agentMessage",
+     "text": ""
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 25,
+  "kind": "notification",
+  "method": "item/agentMessage/delta",
+  "schema": "ServerNotification.json#/definitions/AgentMessageDeltaNotification",
+  "msg": {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "itemId": "item_m1",
+    "delta": "One package fails: "
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 26,
+  "kind": "notification",
+  "method": "item/agentMessage/delta",
+  "schema": "ServerNotification.json#/definitions/AgentMessageDeltaNotification",
+  "msg": {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "itemId": "item_m1",
+    "delta": "internal/store, "
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 27,
+  "kind": "notification",
+  "method": "item/agentMessage/delta",
+  "schema": "ServerNotification.json#/definitions/AgentMessageDeltaNotification",
+  "msg": {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "itemId": "item_m1",
+    "delta": "TestVaultIsNeverIndexed."
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 28,
+  "kind": "notification",
+  "method": "item/completed",
+  "schema": "ServerNotification.json#/definitions/ItemCompletedNotification",
+  "note": "authoritative over the deltas, but already spoken \u2014 emitting it again would say the answer twice",
+  "msg": {
+   "method": "item/completed",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "completedAtMs": 1786000010000,
+    "item": {
+     "id": "item_m1",
+     "type": "agentMessage",
+     "text": "One package fails: internal/store, TestVaultIsNeverIndexed."
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 29,
+  "kind": "notification",
+  "method": "thread/tokenUsage/updated",
+  "schema": "ServerNotification.json#/definitions/ThreadTokenUsageUpdatedNotification",
+  "note": "tokens only: there is no dollar figure anywhere in the Codex contract",
+  "msg": {
+   "method": "thread/tokenUsage/updated",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8QK4T7N9G",
+    "tokenUsage": {
+     "last": {
+      "inputTokens": 8210,
+      "cachedInputTokens": 6144,
+      "outputTokens": 412,
+      "reasoningOutputTokens": 256,
+      "totalTokens": 8622
+     },
+     "total": {
+      "inputTokens": 8210,
+      "cachedInputTokens": 6144,
+      "outputTokens": 412,
+      "reasoningOutputTokens": 256,
+      "totalTokens": 8622
+     },
+     "modelContextWindow": 272000
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 30,
+  "kind": "notification",
+  "method": "turn/completed",
+  "schema": "ServerNotification.json#/definitions/TurnCompletedNotification",
+  "note": "carries no cost at all",
+  "msg": {
+   "method": "turn/completed",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turn": {
+     "id": "turn_01HZX8QK4T7N9G",
+     "status": "completed",
+     "items": [],
+     "durationMs": 9000,
+     "startedAt": 1786000001,
+     "completedAt": 1786000010
+    }
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 31,
+  "kind": "request",
+  "method": "turn/start",
+  "schema": "ClientRequest.json#/definitions/TurnStartParams",
+  "msg": {
+   "id": 4,
+   "method": "turn/start",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "input": [
+     {
+      "type": "text",
+      "text": "fix it"
+     }
+    ],
+    "clientUserMessageId": "relay-turn-2"
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 32,
+  "kind": "notification",
+  "method": "turn/started",
+  "schema": "ServerNotification.json#/definitions/TurnStartedNotification",
+  "msg": {
+   "method": "turn/started",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turn": {
+     "id": "turn_01HZX8R2M6B4KD",
+     "status": "inProgress",
+     "items": [],
+     "startedAt": 1786000020
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 33,
+  "kind": "response",
+  "schema": null,
+  "note": "unspecified",
+  "msg": {
+   "id": 4,
+   "result": {}
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 34,
+  "kind": "notification",
+  "method": "item/started",
+  "schema": "ServerNotification.json#/definitions/ItemStartedNotification",
+  "msg": {
+   "method": "item/started",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8R2M6B4KD",
+    "startedAtMs": 1786000020100,
+    "item": {
+     "id": "item_m2",
+     "type": "agentMessage",
+     "text": ""
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 35,
+  "kind": "notification",
+  "method": "item/agentMessage/delta",
+  "schema": "ServerNotification.json#/definitions/AgentMessageDeltaNotification",
+  "msg": {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8R2M6B4KD",
+    "itemId": "item_m2",
+    "delta": "I'll relax the assertion so the vault table "
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 36,
+  "kind": "request",
+  "method": "turn/steer",
+  "schema": "ClientRequest.json#/definitions/TurnSteerParams",
+  "note": "mid-turn injection. expectedTurnId is a precondition: the request fails once TURN2 is no longer active",
+  "msg": {
+   "id": 5,
+   "method": "turn/steer",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "expectedTurnId": "turn_01HZX8R2M6B4KD",
+    "input": [
+     {
+      "type": "text",
+      "text": "no \u2014 keep the assertion, fix the migration instead"
+     }
+    ],
+    "clientUserMessageId": "relay-steer-1"
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 37,
+  "kind": "response",
+  "schema": null,
+  "note": "unspecified",
+  "msg": {
+   "id": 5,
+   "result": {}
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 38,
+  "kind": "notification",
+  "method": "turn/plan/updated",
+  "schema": "ServerNotification.json#/definitions/TurnPlanUpdatedNotification",
+  "note": "the plan visibly absorbs the steer \u2014 this is what makes steering worth having",
+  "msg": {
+   "method": "turn/plan/updated",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8R2M6B4KD",
+    "explanation": "Steered: keep the assertion, change the migration.",
+    "plan": [
+     {
+      "step": "keep TestVaultIsNeverIndexed as written",
+      "status": "completed"
+     },
+     {
+      "step": "drop the FTS5 trigger from the vault migration",
+      "status": "inProgress"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 39,
+  "kind": "notification",
+  "method": "item/started",
+  "schema": "ServerNotification.json#/definitions/ItemStartedNotification",
+  "msg": {
+   "method": "item/started",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8R2M6B4KD",
+    "startedAtMs": 1786000024000,
+    "item": {
+     "id": "item_f1",
+     "type": "fileChange",
+     "status": "inProgress",
+     "changes": [
+      {
+       "path": "/Users/USER/src/relay/relayd/internal/store/migrations/0002_vault.sql",
+       "kind": {
+        "type": "update",
+        "move_path": null
+       },
+       "diff": "@@\n-CREATE VIRTUAL TABLE vault_fts USING fts5(secret);\n"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 40,
+  "kind": "notification",
+  "method": "item/fileChange/patchUpdated",
+  "schema": "ServerNotification.json#/definitions/FileChangePatchUpdatedNotification",
+  "note": "the live replacement for the deprecated item/fileChange/outputDelta",
+  "msg": {
+   "method": "item/fileChange/patchUpdated",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8R2M6B4KD",
+    "itemId": "item_f1",
+    "changes": [
+     {
+      "path": "/Users/USER/src/relay/relayd/internal/store/migrations/0002_vault.sql",
+      "kind": {
+       "type": "update",
+       "move_path": null
+      },
+      "diff": "@@\n-CREATE VIRTUAL TABLE vault_fts USING fts5(secret);\n"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 41,
+  "kind": "notification",
+  "method": "item/completed",
+  "schema": "ServerNotification.json#/definitions/ItemCompletedNotification",
+  "msg": {
+   "method": "item/completed",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8R2M6B4KD",
+    "completedAtMs": 1786000025000,
+    "item": {
+     "id": "item_f1",
+     "type": "fileChange",
+     "status": "completed",
+     "changes": [
+      {
+       "path": "/Users/USER/src/relay/relayd/internal/store/migrations/0002_vault.sql",
+       "kind": {
+        "type": "update",
+        "move_path": null
+       },
+       "diff": "@@\n-CREATE VIRTUAL TABLE vault_fts USING fts5(secret);\n"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 42,
+  "kind": "notification",
+  "method": "item/agentMessage/delta",
+  "schema": "ServerNotification.json#/definitions/AgentMessageDeltaNotification",
+  "msg": {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8R2M6B4KD",
+    "itemId": "item_m2",
+    "delta": "Dropped the FTS5 table from the vault migration; the assertion stands."
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 43,
+  "kind": "notification",
+  "method": "item/completed",
+  "schema": "ServerNotification.json#/definitions/ItemCompletedNotification",
+  "note": "the concatenated deltas do not read as one sentence, which is exactly what a steered turn looks like",
+  "msg": {
+   "method": "item/completed",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8R2M6B4KD",
+    "completedAtMs": 1786000026000,
+    "item": {
+     "id": "item_m2",
+     "type": "agentMessage",
+     "text": "I'll relax the assertion so the vault table Dropped the FTS5 table from the vault migration; the assertion stands."
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 44,
+  "kind": "notification",
+  "method": "thread/tokenUsage/updated",
+  "schema": "ServerNotification.json#/definitions/ThreadTokenUsageUpdatedNotification",
+  "msg": {
+   "method": "thread/tokenUsage/updated",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turnId": "turn_01HZX8R2M6B4KD",
+    "tokenUsage": {
+     "last": {
+      "inputTokens": 9020,
+      "cachedInputTokens": 8100,
+      "outputTokens": 388,
+      "reasoningOutputTokens": 120,
+      "totalTokens": 9408
+     },
+     "total": {
+      "inputTokens": 17230,
+      "cachedInputTokens": 14244,
+      "outputTokens": 800,
+      "reasoningOutputTokens": 376,
+      "totalTokens": 18030
+     },
+     "modelContextWindow": 272000
+    }
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 45,
+  "kind": "notification",
+  "method": "turn/completed",
+  "schema": "ServerNotification.json#/definitions/TurnCompletedNotification",
+  "msg": {
+   "method": "turn/completed",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10",
+    "turn": {
+     "id": "turn_01HZX8R2M6B4KD",
+     "status": "completed",
+     "items": [],
+     "durationMs": 6000,
+     "startedAt": 1786000020,
+     "completedAt": 1786000026
+    }
+   }
+  }
+ },
+ {
+  "dir": "send",
+  "seq": 46,
+  "kind": "request",
+  "method": "thread/unsubscribe",
+  "schema": "ClientRequest.json#/definitions/ThreadUnsubscribeParams",
+  "note": "the only half of the subscription pair that exists; there is no thread/subscribe",
+  "msg": {
+   "id": 6,
+   "method": "thread/unsubscribe",
+   "params": {
+    "threadId": "01998e4a-7a1f-7c3a-9c22-6d3b1f0e5a10"
+   }
+  }
+ },
+ {
+  "dir": "recv",
+  "seq": 47,
+  "kind": "response",
+  "schema": null,
+  "note": "unspecified",
+  "msg": {
+   "id": 6,
+   "result": {}
+  }
+ }
+]

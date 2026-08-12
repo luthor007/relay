@@ -1,0 +1,7 @@
+{"_comment":"SYNTHETIC. The `codex exec --json` event vocabulary is in NO vendored schema — generate-json-schema describes app-server only — so this file is a fixture for the FALLBACK ADAPTER'S BEHAVIOUR, not a claim about what codex exec actually emits. It deliberately mixes lines shaped like app-server notifications (which the adapter maps) with lines that are not (which it must log by name and drop, rather than guess at). Replace it with a real `codex exec --json` capture on a machine that has Codex installed; ADAPTERS.md §8 tracks that."}
+{"method":"turn/plan/updated","params":{"threadId":"t","plan":[{"step":"read the file","status":"inProgress"},{"step":"summarise it","status":"pending"}]}}
+{"method":"item/agentMessage/delta","params":{"threadId":"t","itemId":"m1","delta":"The file "}}
+{"method":"item/agentMessage/delta","params":{"threadId":"t","itemId":"m1","delta":"is a migration."}}
+{"type":"session.created","session_id":"deadbeef"}
+{"method":"thread/tokenUsage/updated","params":{"threadId":"t","tokenUsage":{"last":{"inputTokens":100,"cachedInputTokens":0,"outputTokens":20,"reasoningOutputTokens":0,"totalTokens":120},"total":{"inputTokens":100,"cachedInputTokens":0,"outputTokens":20,"reasoningOutputTokens":0,"totalTokens":120},"modelContextWindow":272000}}}
+{"msg":{"type":"task_complete","last_agent_message":"done"}}

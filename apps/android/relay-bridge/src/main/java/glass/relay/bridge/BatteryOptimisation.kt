@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import glass.relay.bridge.oem.OemPolicy
 
 /**
  * Surviving aggressive OEM battery management.
@@ -50,14 +51,22 @@ object BatteryOptimisation {
     /**
      * The extra, OEM-specific screen this device needs, or null if it behaves.
      *
-     * Component names are the ones these skins have shipped; they move between
-     * versions, which is why [openManufacturerSettings] falls back to the
-     * generic battery-settings screen rather than throwing.
+     * The table moved to [OemPolicy], which is plain Kotlin and therefore
+     * testable on a machine with no Android SDK — which, until one is
+     * available, is the only place it gets tested at all. This function is now
+     * just `Build.MANUFACTURER` plus that lookup.
      */
-    fun manufacturerAdvice(): ManufacturerAdvice? {
-        val manufacturer = Build.MANUFACTURER.lowercase()
-        return KNOWN.entries.firstOrNull { manufacturer.contains(it.key) }?.value
-    }
+    fun manufacturerAdvice(): OemPolicy.Advice? = OemPolicy.adviceFor(Build.MANUFACTURER)
+
+    /**
+     * Whether this device needs an explicit autostart grant on top of the
+     * exemption.
+     *
+     * Where true, the boot receiver cannot fire at all without it, so a UI that
+     * only offers the standard battery dialog is offering a fix that does not
+     * work.
+     */
+    fun needsAutostartGrant(): Boolean = manufacturerAdvice()?.requiresAutostart == true
 
     fun openManufacturerSettings(context: Context): Boolean {
         val advice = manufacturerAdvice() ?: return false
@@ -83,50 +92,4 @@ object BatteryOptimisation {
     } catch (_: SecurityException) {
         false
     }
-
-    private val KNOWN: Map<String, ManufacturerAdvice> = mapOf(
-        "xiaomi" to ManufacturerAdvice(
-            instruction = "Set Relay's battery saver to \"No restrictions\" and enable Autostart.",
-            components = listOf(
-                "com.miui.securitycenter" to "com.miui.permcenter.autostart.AutoStartManagementActivity",
-            ),
-        ),
-        "huawei" to ManufacturerAdvice(
-            instruction = "Add Relay to protected apps so it keeps running when the screen is off.",
-            components = listOf(
-                "com.huawei.systemmanager" to "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
-                "com.huawei.systemmanager" to "com.huawei.systemmanager.optimize.process.ProtectActivity",
-            ),
-        ),
-        "oppo" to ManufacturerAdvice(
-            instruction = "Allow Relay to run in the background and start automatically.",
-            components = listOf(
-                "com.coloros.safecenter" to "com.coloros.safecenter.permission.startup.StartupAppListActivity",
-            ),
-        ),
-        "vivo" to ManufacturerAdvice(
-            instruction = "Allow high background power use for Relay.",
-            components = listOf(
-                "com.vivo.permissionmanager" to "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",
-            ),
-        ),
-        "oneplus" to ManufacturerAdvice(
-            instruction = "Turn off battery optimisation for Relay and disable Deep Optimisation.",
-            components = listOf(
-                "com.oneplus.security" to "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity",
-            ),
-        ),
-        "samsung" to ManufacturerAdvice(
-            instruction = "Remove Relay from Sleeping apps in Device care.",
-            components = listOf(
-                "com.samsung.android.lool" to "com.samsung.android.sm.ui.battery.BatteryActivity",
-            ),
-        ),
-    )
 }
-
-data class ManufacturerAdvice(
-    /** Shown to the user in plain language before opening the screen. */
-    val instruction: String,
-    val components: List<Pair<String, String>>,
-)

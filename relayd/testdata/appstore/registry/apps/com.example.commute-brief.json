@@ -1,0 +1,46 @@
+{
+  "manifest": {
+    "id": "com.example.commute-brief",
+    "name": "Commute Brief",
+    "version": "0.4.1",
+    "description": "Reads you the transit disruptions on your route before you leave.",
+    "author": {
+      "name": "Sam Okonkwo",
+      "url": "https://github.com/example"
+    },
+    "permissions": [
+      {
+        "scope": "net.fetch",
+        "reason": "To ask the transit agency whether your line is running."
+      },
+      {
+        "scope": "glasses.speaker",
+        "reason": "To read the disruption out loud while you put your coat on."
+      },
+      {
+        "scope": "schedule",
+        "reason": "To check twenty minutes before you normally leave."
+      }
+    ],
+    "allowedHosts": [
+      "api.stm.info",
+      "*.transitfeeds.example"
+    ],
+    "triggers": [
+      {
+        "type": "schedule",
+        "cron": "40 7 * * 1-5"
+      },
+      {
+        "type": "tool",
+        "description": "Report transit disruptions on the user's commute."
+      }
+    ],
+    "timeoutMs": 15000
+  },
+  "source": {
+    "git": "https://github.com/example/commute-brief",
+    "rev": "v0.4.1"
+  },
+  "review": "https://github.com/luthor007/relay-apps/pull/31"
+}

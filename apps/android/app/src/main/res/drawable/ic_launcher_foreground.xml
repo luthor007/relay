@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Relay mark: two lenses and the bridge between them. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:strokeColor="#EFEDE8"
+        android:strokeWidth="4"
+        android:fillColor="#00000000"
+        android:pathData="M32,50 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0" />
+    <path
+        android:strokeColor="#EFEDE8"
+        android:strokeWidth="4"
+        android:fillColor="#00000000"
+        android:pathData="M76,50 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0" />
+    <path
+        android:strokeColor="#E9A23B"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M43,50 L65,50" />
+</vector>

@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "device": {
+    "model": "M01 Pro",
+    "firmware": "synthetic"
+  },
+  "notes": "Synthetic storage-pressure session. Video at ~4.5 GB/h fills 4 GB in well under an hour; the app has to notice before the day's audio is at risk. 0x0911 clears exactly the files that have not been synced.",
+  "frames": [
+    {
+      "tMs": 1000,
+      "dir": "tx",
+      "hex": "a50700010d012c010002ef8c",
+      "note": "start video"
+    },
+    {
+      "tMs": 1100,
+      "dir": "rx",
+      "hex": "a50700020d032d010001e4b1",
+      "note": "LOCAL_VIDEO_STATE_REPORT"
+    },
+    {
+      "tMs": 2401500,
+      "dir": "tx",
+      "hex": "a50700010d012e0100032ff4",
+      "note": "stop video"
+    },
+    {
+      "tMs": 2402000,
+      "dir": "tx",
+      "hex": "a506001c09012f0000ee73",
+      "note": "GET_DISK_INFO"
+    },
+    {
+      "tMs": 2402500,
+      "dir": "tx",
+      "hex": "a50600110901300000dea8",
+      "note": "destructive — confirm first"
+    },
+    {
+      "tMs": 2403000,
+      "dir": "rx",
+      "hex": "a506001209033100008ee3",
+      "note": "CLEAR_RESULT_REPORT"
+    }
+  ],
+  "events": [
+    {
+      "tMs": 0,
+      "event": "connectionChanged",
+      "payload": "connected"
+    },
+    {
+      "tMs": 200,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 3865470566.4
+      }
+    },
+    {
+      "tMs": 1160,
+      "event": "captureState",
+      "payload": {
+        "kind": "video",
+        "active": true,
+        "durationS": 0
+      }
+    },
+    {
+      "tMs": 301000,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 3462817382
+      }
+    },
+    {
+      "tMs": 601000,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 3060164198
+      }
+    },
+    {
+      "tMs": 901000,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 2657511014
+      }
+    },
+    {
+      "tMs": 1201000,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 2254857830
+      }
+    },
+    {
+      "tMs": 1501000,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 1852204646
+      }
+    },
+    {
+      "tMs": 1801000,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 1449551462
+      }
+    },
+    {
+      "tMs": 2101000,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 1046898278
+      }
+    },
+    {
+      "tMs": 2401000,
+      "event": "diskInfo",
+      "payload": {
+        "totalBytes": 4294967296,
+        "freeBytes": 644245094
+      }
+    },
+    {
+      "tMs": 2401560,
+      "event": "captureState",
+      "payload": {
+        "kind": "video",
+        "active": false,
+        "durationS": 2400
+      }
+    },
+    {
+      "tMs": 2403060,
+      "event": "clearResult",
+      "payload": {
+        "deletedFiles": 3,
+        "freedBytes": 1612349440
+      }
+    }
+  ]
+}

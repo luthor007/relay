@@ -1,0 +1,6 @@
+# Built binaries. `go build ./cmd/relayd` with no -o drops a 16 MB executable
+# right here, and it is exactly the kind of thing that gets committed once and
+# then lives in the history forever. Build to a scratch path, or let it be
+# ignored.
+/relayd
+/relay

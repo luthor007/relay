@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Relay</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+
+	<!--
+	  Background modes.
+
+	  `audio` is what keeps capture alive when the screen locks. It is also the
+	  single riskiest thing in this Info.plist from an App Review standpoint:
+	  the mode must be justified by audio the user can perceive as the app's
+	  purpose, and Apple rejects apps that declare it to stay alive. Mentra ships
+	  an approved client in exactly this category (AGENT-BRIEF §8-B) — read their
+	  justification before submitting rather than inventing one.
+
+	  `bluetooth-central` plus CBCentralManager state restoration is what lets
+	  iOS relaunch this app into the background when the glasses reconnect. It is
+	  not optional: without restoration, a terminated app never comes back and
+	  the day's capture silently ends.
+	-->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>bluetooth-central</string>
+		<string>processing</string>
+	</array>
+
+	<!--
+	  The nightly sync window. `BGProcessingTaskRequest` is submitted with
+	  `requiresExternalPower` and `requiresNetworkConnectivity`, which is the
+	  ritual from docs/APPS-SCOPE.md §3.1 expressed as a scheduling constraint
+	  rather than as a hope. An identifier missing from this list makes
+	  `BGTaskScheduler.register` trap at launch, so this and AppDelegate must
+	  agree exactly.
+	-->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>glass.relay.nightly-sync</string>
+	</array>
+
+	<!--
+	  Purpose strings. Written to be true and specific — iOS shows these verbatim
+	  at the moment of asking, and a vague one is both a rejection risk and a
+	  worse consent moment than the app's own explanation screen.
+	-->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Relay connects to your glasses over Bluetooth to keep capture running and to sync what they recorded.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Relay records audio from your glasses while you are wearing them.</string>
+	<!--
+	  Speech recognition happens on the phone, not on the glasses: the glasses
+	  report that something was said (0x0803/0x0805) and have no ASR of their own.
+	  Needed by SFSpeechRecognizer.
+	-->
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Relay turns what you say into text on this phone, so your glasses only ever send audio.</string>
+	<!--
+	  Two local-network needs: your box, which is usually on the same WiFi as the
+	  phone, and the glasses' own access point at 192.168.31.1 during a sync.
+	  Without this the connection fails with a generic timeout that looks like a
+	  bug in the box.
+	-->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Relay talks to your own box over your home network, and to your glasses over their WiFi while syncing the day.</string>
+
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string></string>
+	</dict>
+	<!--
+	  arm64, not the Xcode template's armv7. The five vendor frameworks are
+	  arm64 device-only slices (`lipo -info` on all of them), so armv7 here is
+	  both false and, on a 17.0 deployment target, meaningless.
+	-->
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
+</dict>
+</plist>

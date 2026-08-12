@@ -1,6 +1,35 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+}
+
+// ---------------------------------------------------------------- vendor SDK
+//
+// The vendor AAR is proprietary Shenzhen QC.wireless material and is not copied
+// into this module automatically — see apps/android/README.md. Everything here
+// is arranged so the module builds *identically whether or not it is present*:
+//
+//   absent  → src/vendor/ is excluded, only the mock transport exists
+//   present → src/vendor/ compiles against the extracted classes.jar
+//
+// Two things force this shape. `compileOnly(files("x.aar"))` does not work at
+// all — AGP resolves file dependencies as JARs, so an AAR silently contributes
+// no classes and every com.glasses.* reference fails to resolve. And a source
+// file that references classes which may not exist cannot live in `main`.
+val vendorAar = layout.projectDirectory.file("../libs/LIB_GLASSES_SDK-release-20260709_8.aar").asFile
+val hasVendorSdk = vendorAar.exists()
+
+// Registered only when the AAR is present, rather than registered-and-skipped:
+// an `onlyIf { }` lambda closes over this script, and the configuration cache
+// cannot serialise script references.
+val extractVendorSdk = if (hasVendorSdk) {
+    tasks.register<Copy>("extractVendorSdk") {
+        from(zipTree(vendorAar)) { include("classes.jar") }
+        into(layout.buildDirectory.dir("vendor"))
+        rename("classes.jar", "vendor-sdk.jar")
+    }
+} else {
+    null
 }
 
 android {
@@ -18,6 +47,14 @@ android {
         buildConfig = true
     }
 
+    sourceSets {
+        getByName("main") {
+            // Only compiled when the AAR is on disk. The factory in `main` finds
+            // this class reflectively, so `main` never depends on it existing.
+            if (hasVendorSdk) java.srcDir("src/vendor/java")
+        }
+    }
+
     buildTypes {
         debug {
             // The vendor AAR needs real hardware, so debug builds default to the
@@ -29,6 +66,13 @@ android {
             buildConfigField("boolean", "USE_MOCK_GLASSES", "false")
             isMinifyEnabled = false
         }
+    }
+
+    // Recorded so the factory can tell "mock because debug" from "mock because
+    // the SDK was missing at build time" — the second is a broken release, and
+    // it should fail loudly rather than ship a build that cannot see glasses.
+    buildTypes.configureEach {
+        buildConfigField("boolean", "HAS_VENDOR_SDK", hasVendorSdk.toString())
     }
 
     compileOptions {
@@ -46,13 +90,17 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.kotlinx.coroutines.android)
 
-    // Vendor SDK. Device-only (arm64); see apps/android/README.md for why debug
-    // builds do not link against it.
-    compileOnly(files("../libs/LIB_GLASSES_SDK-release-20260709_8.aar"))
+    // Device-only (arm64), so it is compiled against but never packaged: the
+    // app module links the real AAR. See apps/android/README.md.
+    if (extractVendorSdk != null) {
+        compileOnly(files(layout.buildDirectory.file("vendor/vendor-sdk.jar")) {
+            builtBy(extractVendorSdk)
+        })
+    }
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

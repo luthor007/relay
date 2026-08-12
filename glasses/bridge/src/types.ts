@@ -196,7 +196,16 @@ export interface GlassesEvents {
   /** Live microphone, only between startVoiceSession and stopVoiceSession. */
   audioChunk: AudioChunk;
   voiceSessionChanged: boolean;
-  /** Device-side speech recognition, when the firmware provides it. */
+  /**
+   * Text the **app's** recogniser produced, re-emitted on the transport so every
+   * screen reads one stream.
+   *
+   * Not device ASR — the glasses have none. `0x0803`/`0x0805` report that the
+   * wearer wants to talk; every verb in them ("start recognition", "end
+   * recognition", "stop speaking") belongs to the app. The vendor's
+   * `didReceiveAIChatTextMessage` is their own cloud assistant answering through
+   * their app, not a recogniser we inherit. `SYSTEM.md` §7b.
+   */
   transcriptText: string;
   photoProgress: PhotoProgress;
   photo: Photo;
