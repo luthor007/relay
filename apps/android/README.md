@@ -33,21 +33,80 @@ relay-bridge/
 
 ---
 
-## Status — **nothing here has been compiled by the Android toolchain**
+## Status — compiles, tests green, release signed
 
-Say that plainly before anything else. The machine this was written on has no
-Android SDK, and `dl.google.com` — where both the Android Gradle Plugin and
-every SDK package live — returns a 403 policy denial. That is an organisation
-egress policy, not a misconfiguration. So:
+This section used to open "nothing here has been compiled by the Android
+toolchain", which was true when it was written: that machine had no SDK and
+`dl.google.com` returned a 403 policy denial. It is no longer true.
 
 | | State |
 |---|---|
-| `./gradlew :app:assembleDebug` | **not run** — needs AGP from `dl.google.com` |
-| `./gradlew :relay-bridge:testDebugUnitTest` | **not run** — same |
-| `./tools/verify-jvm-logic.sh` | **green: 262 tests** |
+| `./gradlew :app:assembleDebug` | **green** |
+| `./gradlew :app:assembleRelease` | **green, signed** — see [Signing](#signing) |
+| `./gradlew :app:bundleRelease` | **green, signed** — `app-release.aab` for Play |
+| `./gradlew :relay-bridge:testDebugUnitTest` | **green: 327 tests** |
+| `./tools/verify-jvm-logic.sh` | **green** — still the floor when there is no SDK |
 
-The last line is the floor, not a substitute. What it proves is real, and what
-it cannot see is listed below.
+Getting `testDebugUnitTest` green took one dependency and no product changes.
+`android.jar` ships an `org.json` whose every method throws, and
+`unitTests.isReturnDefaultValues = true` turns each throw into a `null` return —
+so `JSONObject.put(k, 1)` hands back `null` instead of `this`, and the next call
+in the chain dies. It cost 51 tests, every one an NPE inside `Envelope.kt`,
+every one pointing at correct code. A real `org.json` on the test classpath
+shadows the stub.
+
+What is still unproven is below, and it is the part that matters: none of this
+has run on a physical device.
+
+## Signing
+
+The release build is signed with an **upload key** for Play App Signing —
+Google holds the app signing key and re-signs what you upload. That choice is
+the recoverable one: an upload key can be reset by Google if it is lost, and a
+self-managed app signing key cannot be, ever, for the life of the listing.
+
+The key is **not in this repository and must never be**. It lives at
+`~/.android-keystores/relay-upload.jks`, outside the tree, so that no
+`git add -A` here can reach it. `app/build.gradle.kts` finds it through
+`apps/android/keystore.properties`, which is gitignored and holds the path and
+the passwords.
+
+```
+keystore  ~/.android-keystores/relay-upload.jks   RSA 4096, valid to 2053-12-28
+alias     upload
+config    apps/android/keystore.properties        gitignored, chmod 600
+```
+
+Back up both the keystore and that properties file, somewhere that is not this
+machine.
+
+A checkout without `keystore.properties` still builds. It produces an unsigned
+release rather than failing, because a build that dies with "keystore not
+found" is a build that teaches people to paste keys into the repository to make
+the error stop.
+
+`apksigner verify` reports `v1: false` on the output, and that is correct. v1
+is JAR signing and only matters below API 24; `minSdk` here is 26, so every
+device that can install this verifies through v2 or v3, both of which are on.
+
+### Setting it up on another machine
+
+```sh
+keytool -genkeypair -keystore ~/.android-keystores/relay-upload.jks \
+  -storetype PKCS12 -alias upload -keyalg RSA -keysize 4096 -validity 10000 \
+  -dname "CN=Relay, O=Jappuie Inc., C=CA"
+
+cat > apps/android/keystore.properties <<'EOF'
+storeFile=/absolute/path/to/relay-upload.jks
+storePassword=…
+keyAlias=upload
+keyPassword=…
+EOF
+chmod 600 apps/android/keystore.properties
+```
+
+Copy the existing keystore rather than generating a second one if the app is
+already on Play under the first: a different upload key is a rejected upload.
 
 ### What was actually verified
 

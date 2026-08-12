@@ -162,7 +162,7 @@ Pre-launch. Founders Edition units ship in 6–8 weeks.
 | Transport + mock | working, 264 tests |
 | Pairing, box link, store-and-forward | working, in the transport package |
 | App SDK | types and manifest validation, 13 tests |
-| Android capture service | compiles; debug APK and Play bundle build, 327 unit tests pass. The release build is **not signed yet** |
+| Android capture service | compiles; 327 unit tests pass; release APK and Play bundle build **signed**. Not yet uploaded |
 | iOS host app | compiles; 192 tests pass on the simulator. **Never run on a device**, and not submitted |
 | Orchestrator (`relayd`) | working, 45 packages and 1,611 tests |
 | Agent adapters | Claude Code, Codex, ACP — each replays a recorded session |
