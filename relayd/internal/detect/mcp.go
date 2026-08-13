@@ -378,6 +378,16 @@ func normalizeYAML(v any) any {
 }
 
 func serversFromDoc(doc any) ([]MCPServer, bool) {
+	return serversFromDocAt(doc, 0)
+}
+
+// maxMCPNesting is how deep one container key may sit inside another. OpenClaw's
+// {"mcp":{"servers":…}} is the deepest of the five, and the bound stops a
+// hand-written config from walking us into some unrelated map that happens to
+// share a name.
+const maxMCPNesting = 1
+
+func serversFromDocAt(doc any, depth int) ([]MCPServer, bool) {
 	m, ok := doc.(map[string]any)
 	if !ok {
 		return nil, false
@@ -387,12 +397,25 @@ func serversFromDoc(doc any) ([]MCPServer, bool) {
 		if !present {
 			continue
 		}
-		if inner, isMap := raw.(map[string]any); isMap {
-			return serversFromMap(inner), true
-		}
 		if list, isList := raw.([]any); isList {
 			return serversFromList(list), true
 		}
+		inner, isMap := raw.(map[string]any)
+		if !isMap {
+			continue
+		}
+		// A container holding another container is OpenClaw's shape: the servers
+		// are at mcp.servers, and reading the outer half as the list yields
+		// "readable, and none" — the one answer this file exists to never give,
+		// because it is indistinguishable from a machine with no servers and
+		// leads the installer to the opposite decision. The server-map test comes
+		// first so a server actually named "servers" is still read as a server.
+		if !looksLikeServerMap(inner) && depth < maxMCPNesting {
+			if servers, found := serversFromDocAt(inner, depth+1); found {
+				return servers, true
+			}
+		}
+		return serversFromMap(inner), true
 	}
 	// A file that is nothing but a server map, which is what a `mcp list --json`
 	// could reasonably print.
@@ -411,15 +434,24 @@ func looksLikeServerMap(m map[string]any) bool {
 		if !ok {
 			return false
 		}
-		if _, has := sm["command"]; has {
-			continue
+		if !namesATransport(sm) {
+			return false
 		}
-		if _, has := sm["url"]; has {
-			continue
-		}
-		return false
 	}
 	return true
+}
+
+// namesATransport reports whether a map is a server entry rather than another
+// layer of container. The types are load-bearing: a server says command as a
+// string or an argv and url as a string, so a container whose single key happens
+// to be "command" or "url" — pointing at a map — is not mistaken for one.
+func namesATransport(sm map[string]any) bool {
+	switch sm["command"].(type) {
+	case string, []any:
+		return true
+	}
+	_, remote := sm["url"].(string)
+	return remote
 }
 
 func serversFromMap(m map[string]any) []MCPServer {

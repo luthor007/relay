@@ -29,45 +29,31 @@ import (
 //     attached to it, and the user decides;
 //  4. Custom Provider is always the last row, so the list is never a cage.
 
-// claudePreamble is ORCHESTRATOR.md §2b's exact wording, and it is printed
-// before the menu rather than after somebody has gone looking for the Anthropic
-// row and drawn their own conclusion. The confusion is predictable, so it is
-// pre-empted in as many words.
-const claudePreamble = `A note on Claude, because this catches people out.
+// modelsPreamble is what is left of ORCHESTRATOR.md §2b's wording after asking
+// what a person needs in order to answer the next question.
+//
+// The two paragraphs that went: why the split is a latency decision and not a
+// cost one, and why the big model is not the place to economise. Both are true,
+// both are the reasoning behind a default the user is not being asked to
+// relitigate, and both are still in §2b where they belong. What survives is the
+// one sentence that changes an answer — the small one speaks, the big one
+// works, one key does both.
+const modelsPreamble = `Two models: a fast one that speaks, and a strong one that does the work.
 
-Your Claude Max plan still powers Claude Code on this machine — that is Anthropic's own ` +
-	`client using its own login, and nothing about it changes. What it cannot do is power ` +
-	`our orchestrator. That part needs an API key.
-
-There are ways around that — claude setup-token, the community max-api-proxy — and both ` +
-	`are subscription credentials used outside Anthropic's own client. Anthropic has blocked ` +
-	`that before. We do not ship it as a row, we are not pretending it is impossible, and we ` +
-	`will not be able to support it when it breaks.
-
-Other subscriptions do work here: ChatGPT through the Codex row, GitHub Copilot, and the ` +
-	`Qwen, MiniMax and Z.AI coding plans. Rather than shipping a table of which ones are ` +
-	`allowed this quarter, Relay probes the credential and tells you what the provider ` +
-	`actually said.`
-
-const modelsPreamble = `Relay runs two models with different jobs.
-
-The small one hears every utterance and speaks within about 400ms — status, control verbs, ` +
-	`"on it". The big one only wakes for real work: routing judgement, tools, sessions, ` +
-	`memory. This is a latency decision, not a cost one. A big model thinking is dead air in ` +
-	`your ear, and eight seconds of silence reads as broken no matter what arrives after it.
-
-The big model holds the MCP registry and a shell, so it is not the place to economise — ` +
-	`weaker tiers are easier to prompt-inject.
-
-OpenRouter is recommended: one key covers both, and either can be swapped later without ` +
-	`re-running setup. Everything else on the list works; that one is just the shortest path.`
+OpenRouter covers both with one key, and either can be swapped later.`
 
 // loginCommands maps an auth row onto the command that performs it, where we
 // know one. Every other subscription and OAuth row is walked in words instead
 // of guessed at — the installer says what to run only when it is sure.
-var loginCommands = map[string]string{
-	"openai-codex": "codex login",
-}
+//
+// It is empty, and that is the point of the change on 2026-08-12: the one entry
+// it held was `codex login`, and sending the user to another terminal to run it
+// was the wrong half of the answer. Relay performs that login itself now (see
+// codex.go), and a row that Relay can perform never reaches this map. The map
+// stays because the rows it is for — Copilot's device login, Qwen's OAuth —
+// are still walked in words, and the day we are sure of one of those commands
+// this is where it goes.
+var loginCommands = map[string]string{}
 
 // ModelChoice is one of the two models.
 type ModelChoice struct {
@@ -116,10 +102,14 @@ func chooseModels(ctx context.Context, opts Options) (ModelsOutcome, error) {
 	p := opts.Prompt
 	var out ModelsOutcome
 
-	p.Section("Choose the orchestrator models", modelsPreamble)
-	p.Say("\n%s", wrap(claudePreamble, 76))
+	// The Claude note is not printed here any more. It answered a question —
+	// "why can I not use my Max plan?" — that only exists once somebody has
+	// gone looking for the Anthropic row, and it charged every user four
+	// paragraphs for it. It is now that row's own note, printed when the row is
+	// chosen. See llm.Vendors.
+	p.Section("Choose the models", modelsPreamble)
 
-	small, err := chooseModel(ctx, opts, "small",
+	small, err := verifyModel(ctx, opts, "small",
 		"The voice — fast and cheap. It speaks, narrates progress from structured events, and "+
 			"never invents a specific it was not told.", llm.SmallModelDefault, nil)
 	if err != nil {
@@ -128,7 +118,7 @@ func chooseModels(ctx context.Context, opts Options) (ModelsOutcome, error) {
 	out.Small = small
 	out.Warnings = append(out.Warnings, small.Warnings...)
 
-	big, err := chooseModel(ctx, opts, "big",
+	big, err := verifyModel(ctx, opts, "big",
 		"The work — the strongest one available. It routes, holds the MCP registry and a shell, "+
 			"and writes to memory.", llm.BigModelDefault, &small)
 	if err != nil {
@@ -145,6 +135,39 @@ func chooseModels(ctx context.Context, opts Options) (ModelsOutcome, error) {
 		return out, err
 	}
 	return out, nil
+}
+
+// verifyModel picks a model and, when the one real call did not answer, offers
+// to pick again rather than carrying a dead credential to the summary. See
+// repair.go.
+func verifyModel(ctx context.Context, opts Options, role, why, defaultModel string, prior *ModelChoice) (ModelChoice, error) {
+	return verify(ctx, opts, repair[ModelChoice]{
+		ID:      "models." + role + ".repair",
+		Title:   strings.ToUpper(role[:1]) + role[1:] + " model — not working yet",
+		Choose:  func() (ModelChoice, error) { return chooseModel(ctx, opts, role, why, defaultModel, prior) },
+		OK:      func(c ModelChoice) bool { return c.OK() },
+		Trouble: func(c ModelChoice) string { return modelTrouble(role, c) },
+		Facts: func(c ModelChoice) DiagnoseFacts {
+			base := c.Model.BaseURL
+			if base == "" {
+				base = c.Vendor.BaseURL
+			}
+			return DiagnoseFacts{
+				What:     "the " + role + " orchestrator model",
+				Vendor:   c.Vendor.Label,
+				Model:    c.Model.Model,
+				Endpoint: hostOf(base),
+				Reason:   string(c.Probe.Reason),
+				Detail:   c.Probe.Detail,
+				Ref:      c.Model.Credential,
+			}
+		},
+		FixLabel:      "Choose again — vendor, sign-in, model id, credential",
+		ContinueLabel: "Leave it for now, and finish the install",
+		GiveUp: "Leaving the " + role + " model as it is. `relay models` re-runs this step on its " +
+			"own, and `relay doctor` re-tests every credential with one real call, so this is " +
+			"not the last chance to fix it.",
+	})
 }
 
 // chooseModel runs the two-level menu for one role. prior is the model already
@@ -241,11 +264,23 @@ func chooseModel(ctx context.Context, opts Options, role, why, defaultModel stri
 		cfgModel.API = shape
 	}
 
-	// A subscription, OAuth or device-code row is the vendor's own login. Relay
-	// cannot perform it — and pretending to would be worse than saying so, on a
-	// headless box especially. So it is walked, and the credential it leaves
-	// behind is referenced like any other.
-	if auth.Kind != llm.AuthAPIKey {
+	// An auth method may reach a different endpoint than its vendor's. The
+	// ChatGPT rows do: a subscription is only spendable at chatgpt.com, which
+	// speaks a different wire than api.openai.com, and probing the credential
+	// against the vendor's own base URL would report a working login as a bad
+	// one.
+	if auth.BaseURL != "" {
+		cfgModel.BaseURL = auth.BaseURL
+	}
+	if auth.API != "" {
+		cfgModel.API = string(auth.API)
+	}
+
+	// A subscription, OAuth or device-code row that Relay can perform, it
+	// performs — see codex.go. What it will not do is walk the user through
+	// somebody else's login and then ask which environment variable holds the
+	// key, because for a subscription there is no key to hold.
+	if auth.Kind != llm.AuthAPIKey && auth.Ref == "" {
 		body := fmt.Sprintf("%s is %s's own login, not ours. Run it in another terminal now — "+
 			"on a headless box this is the slow part of setup, and it is one device-code flow "+
 			"at a time.", auth.Label, vendor.Label)
@@ -264,10 +299,24 @@ func chooseModel(ctx context.Context, opts Options, role, why, defaultModel stri
 		}
 	}
 
-	// Model id.
+	// Model id. An auth method that serves its own catalog names its own
+	// default: the subscription endpoint does not answer to platform model ids,
+	// so inheriting the vendor's would be a 404 dressed up as a bad login.
 	modelDefault := defaultModelFor(vendor, defaultModel)
+	if auth.Model != "" {
+		modelDefault = auth.Model
+	}
+	// The budget alternative is named on the question that decides the bill,
+	// and only for the role where the bill is decided. It is one line, and it
+	// is not a menu: the default is a real recommendation, and this is the one
+	// fact a user needs to overrule it on purpose rather than by accident.
+	var modelBody string
+	if role == "big" && modelDefault == llm.BigModelDefault {
+		modelBody = "Cheaper: " + llm.BudgetModelDefault + " — about 6× less, and not far behind."
+	}
 	modelID, err := p.Input(Input{
-		ID: "models." + role + ".model", Prompt: "Model id", Default: modelDefault,
+		ID: "models." + role + ".model", Prompt: "Model id",
+		Body: modelBody, Default: modelDefault,
 	})
 	if err != nil {
 		return choice, err
@@ -292,20 +341,36 @@ func chooseModel(ctx context.Context, opts Options, role, why, defaultModel stri
 		}
 	}
 	if !reused {
-		ref, err := askCredential(ctx, opts, CredentialAsk{
-			ID:      "models." + role + ".cred",
-			Service: "models",
-			Label:   vendor.Label,
-			EnvHint: envVarFor(vendor),
-		})
-		switch {
-		case errors.Is(err, errCredentialSkipped):
-			choice.Warnings = append(choice.Warnings,
-				fmt.Sprintf("the %s model has no credential, so the orchestrator cannot use it yet", role))
-		case err != nil:
-			return choice, err
-		default:
-			cfgModel.Credential = ref.String()
+		// A subscription row does not end in a credential question. It ends in
+		// a sign-in, or in reading the one this machine already has.
+		if auth.Ref == llm.RefCodex {
+			out, err := chooseCodexCredential(ctx, opts, "models."+role+".chatgpt", auth)
+			switch {
+			case errors.Is(err, errCredentialSkipped):
+				choice.Warnings = append(choice.Warnings,
+					fmt.Sprintf("the %s model has no ChatGPT login, so the orchestrator cannot use it yet", role))
+			case err != nil:
+				return choice, err
+			default:
+				cfgModel.Credential = out.Ref.String()
+				p.Say("  Signed in as %s.", out.Account)
+			}
+		} else {
+			ref, err := askCredential(ctx, opts, CredentialAsk{
+				ID:      "models." + role + ".cred",
+				Service: "models",
+				Label:   vendor.Label,
+				EnvHint: envVarFor(vendor),
+			})
+			switch {
+			case errors.Is(err, errCredentialSkipped):
+				choice.Warnings = append(choice.Warnings,
+					fmt.Sprintf("the %s model has no credential, so the orchestrator cannot use it yet", role))
+			case err != nil:
+				return choice, err
+			default:
+				cfgModel.Credential = ref.String()
+			}
 		}
 	}
 	choice.Model = cfgModel
@@ -389,6 +454,7 @@ func probeModel(ctx context.Context, opts Options, m config.Model) (llm.ProbeRes
 		p, err := llm.New(llm.Config{
 			Vendor: m.Vendor, API: shape, BaseURL: m.BaseURL, Model: m.Model,
 			Credential: ref, HTTPClient: opts.HTTPClient, Lookup: opts.Lookup(),
+			Codex: codexOptions(opts),
 		})
 		if err != nil {
 			return llm.ProbeResult{Vendor: m.Vendor, Model: m.Model,

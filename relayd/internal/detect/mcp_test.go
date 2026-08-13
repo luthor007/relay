@@ -180,6 +180,91 @@ func TestCommandOutputWinsOverConfigFile(t *testing.T) {
 	}
 }
 
+// OpenClaw nests its list one level down, at mcp.servers — src/config/mcp-config.ts
+// reads sourceConfig.mcp?.servers. Reading only the outer half of that key is
+// the worst available failure: it answers "readable, and no servers", which is
+// the one thing this file promises never to say when it does not know.
+func TestOpenClawNestedServersAreRead(t *testing.T) {
+	const home = "/home/u"
+	env := Env{
+		FS: &MemFS{Files: map[string]string{
+			home + "/.openclaw/openclaw.json": `{
+				"gateway": {"port": 18789},
+				"mcp": {
+					"servers": {
+						"github": {"command": "gh-mcp", "args": ["serve"]},
+						"docs":   {"url": "https://docs.example/mcp", "transport": "streamable-http"}
+					}
+				}
+			}`,
+		}},
+		Home: home,
+		GOOS: "darwin",
+	}
+	f := Finding{Runtime: adapter.OpenClaw, BinaryName: "openclaw", Installed: true,
+		StateDir: home + "/.openclaw", StateDirExists: true}
+
+	o := readRuntimeMCP(context.Background(), env, f)
+	if !o.Readable {
+		t.Fatalf("origin = %+v", o)
+	}
+	if len(o.Servers) != 2 {
+		t.Fatalf("servers = %+v, want the two under mcp.servers", o.Servers)
+	}
+	if o.Servers[0].Name != "docs" || o.Servers[0].URL != "https://docs.example/mcp" {
+		t.Errorf("remote server = %+v", o.Servers[0])
+	}
+	if o.Servers[1].Name != "github" || o.Servers[1].Command != "gh-mcp" {
+		t.Errorf("stdio server = %+v", o.Servers[1])
+	}
+	if o.FromFile != home+"/.openclaw/openclaw.json" {
+		t.Errorf("FromFile = %q; adoption rewrites that path and rollback restores it", o.FromFile)
+	}
+}
+
+// The nesting is read, not guessed: a runtime whose server is actually called
+// "servers" still has a server called "servers".
+func TestServerNamedServersIsNotMistakenForNesting(t *testing.T) {
+	servers, ok := parseMCPFile([]byte(
+		`{"mcpServers":{"servers":{"command":"servers-mcp","args":["--stdio"]}}}`), "json")
+	if !ok {
+		t.Fatal("unreadable")
+	}
+	if len(servers) != 1 || servers[0].Name != "servers" || servers[0].Command != "servers-mcp" {
+		t.Fatalf("servers = %+v", servers)
+	}
+}
+
+// An empty list is a real answer, and a different one from "we could not read
+// it". Neither nesting level may turn one into the other.
+func TestEmptyNestedServersIsReadableAndNone(t *testing.T) {
+	servers, ok := parseMCPFile([]byte(`{"gateway":{"port":1},"mcp":{"servers":{}}}`), "json")
+	if !ok {
+		t.Fatal("a config with an empty mcp.servers is readable, and its answer is none")
+	}
+	if len(servers) != 0 {
+		t.Fatalf("servers = %+v", servers)
+	}
+}
+
+// The four other runtimes keep their list at the top level, and the walk that
+// found OpenClaw's must not have moved theirs.
+func TestFlatContainerKeysStillRead(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"claude", `{"mcpServers":{"gh":{"command":"gh-mcp"}}}`},
+		{"opencode", `{"mcp":{"gh":{"type":"local","command":["gh-mcp","serve"]}}}`},
+		{"bare", `{"gh":{"command":"gh-mcp"}}`},
+		{"list", `{"servers":[{"name":"gh","command":"gh-mcp"}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			servers, ok := parseMCPFile([]byte(tc.body), "json")
+			if !ok || len(servers) != 1 || servers[0].Command != "gh-mcp" {
+				t.Fatalf("ok=%v servers=%+v", ok, servers)
+			}
+		})
+	}
+}
+
 func TestServerKeyIgnoresName(t *testing.T) {
 	a := MCPServer{Name: "github", Command: "gh-mcp", Args: []string{"serve"}}
 	b := MCPServer{Name: "gh", Command: "gh-mcp", Args: []string{"serve"}}

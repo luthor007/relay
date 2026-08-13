@@ -55,7 +55,7 @@ func Installers() []RuntimeInstaller {
 	return []RuntimeInstaller{
 		{
 			Runtime: adapter.ClaudeCode, Label: "Claude Code",
-			Why: "Anthropic's own client. If you have a Claude subscription, this is where it works.",
+			Why: "Where a Claude subscription works.",
 			Methods: []InstallMethod{
 				{Requires: "npm", Command: []string{"npm", "install", "-g", "@anthropic-ai/claude-code"}},
 			},
@@ -63,7 +63,7 @@ func Installers() []RuntimeInstaller {
 		},
 		{
 			Runtime: adapter.Codex, Label: "Codex",
-			Why: "OpenAI's agent. Its ChatGPT OAuth is also the one subscription path the orchestrator can use.",
+			Why: "Where a ChatGPT subscription works.",
 			Methods: []InstallMethod{
 				{Requires: "npm", Command: []string{"npm", "install", "-g", "@openai/codex"}},
 			},
@@ -71,7 +71,7 @@ func Installers() []RuntimeInstaller {
 		},
 		{
 			Runtime: adapter.OpenCode, Label: "OpenCode",
-			Why: "Speaks ACP, so Relay drives it with the same adapter as the other two.",
+			Why: "Speaks ACP.",
 			Methods: []InstallMethod{
 				{Requires: "npm", Command: []string{"npm", "install", "-g", "opencode-ai"}},
 			},
@@ -79,12 +79,20 @@ func Installers() []RuntimeInstaller {
 		},
 		{
 			Runtime: adapter.OpenClaw, Label: "OpenClaw",
-			Why:  "Speaks ACP through its gateway.",
-			Docs: "",
+			Why: "Speaks ACP; drives the other runtimes.",
+			// Probed on a real machine on 2026-08-12, which is what this table
+			// requires before it will print a command: the global package was
+			// removed with `npm uninstall -g openclaw` and the registry lists
+			// the same name and binary. Hermes is still open for want of the
+			// same evidence.
+			Methods: []InstallMethod{
+				{Requires: "npm", Command: []string{"npm", "install", "-g", "openclaw"}},
+			},
+			Docs: "https://docs.openclaw.ai",
 		},
 		{
 			Runtime: adapter.Hermes, Label: "Hermes",
-			Why:  "Speaks ACP. On the machine this design was measured on it held 70% of the history.",
+			Why:  "Speaks ACP.",
 			Docs: "",
 		},
 	}
@@ -121,8 +129,7 @@ func offerRuntimes(ctx context.Context, opts Options, rep detect.Report) (Runtim
 	}
 
 	p.Section("Anything else?", fmt.Sprintf(
-		"%d of the five agent runtimes are not installed here. Relay works with whatever you "+
-			"have — this is an offer, not a requirement, and nothing is installed unless you say so.",
+		"%d of the five agent runtimes are missing. Nothing is installed unless you say so.",
 		len(missing)))
 
 	for _, f := range missing {
@@ -133,14 +140,26 @@ func offerRuntimes(ctx context.Context, opts Options, rep detect.Report) (Runtim
 		out.Offered = append(out.Offered, f.Runtime)
 
 		method, methodOK := pickMethod(opts.Env, inst)
+		// Every row here installs with npm, and a machine with no Node has no
+		// npm — which used to mean a clean Mac mini finished setup with no
+		// agent runtimes at all and no explanation beyond "no install command".
+		// Offered once: declining puts every row back on the unknown list.
+		if !methodOK && needsNode(inst) {
+			ok, err := ensureNode(ctx, opts, "The agent runtimes")
+			if err != nil {
+				return out, err
+			}
+			if ok {
+				method, methodOK = pickMethod(opts.Env, inst)
+			}
+		}
 		if !methodOK {
 			out.Unknown = append(out.Unknown, f.Runtime)
 			msg := fmt.Sprintf("%s: Relay has no install command it can run here.", inst.Label)
 			if inst.Docs != "" {
 				msg += " Install it from " + inst.Docs + " and re-run `relay detect`."
 			} else {
-				msg += " Install it however you normally would and re-run `relay detect` — " +
-					"Relay will pick it up. We do not ship a guessed package name for this one."
+				msg += " Install it yourself and re-run `relay detect`."
 			}
 			p.Say("  %s", wrapIndent(msg, 2, 76))
 			continue
@@ -192,6 +211,20 @@ func offerRuntimes(ctx context.Context, opts Options, rep detect.Report) (Runtim
 }
 
 // pickMethod returns the first method whose prerequisite is on this machine.
+// needsNode reports whether every way of installing this runtime goes through
+// npm, which is the only case worth offering a language runtime for.
+func needsNode(inst RuntimeInstaller) bool {
+	if len(inst.Methods) == 0 {
+		return false
+	}
+	for _, m := range inst.Methods {
+		if m.Requires != "npm" {
+			return false
+		}
+	}
+	return true
+}
+
 func pickMethod(env detect.Env, inst RuntimeInstaller) (InstallMethod, bool) {
 	for _, m := range inst.Methods {
 		if len(m.Command) == 0 {

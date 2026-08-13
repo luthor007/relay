@@ -186,3 +186,18 @@ func TestServiceFailureReportsTheUsefulLine(t *testing.T) {
 		t.Errorf("the symlink line is not the failure: %v", out.Warnings)
 	}
 }
+
+// A LaunchAgent inherits a minimal PATH, not the shell's. Without this the
+// Gateway is running at boot and relayd cannot see it — a silent failure that
+// looks exactly like the Gateway being down.
+func TestTheBootServiceGetsAPathThatCanFindOpenClaw(t *testing.T) {
+	plist := launchdPlist("glass.relay.relayd", "/usr/local/bin/relayd", "", "/tmp")
+	if !strings.Contains(plist, "<key>EnvironmentVariables</key>") {
+		t.Fatal("the plist has no environment, so a booted relayd inherits launchd's PATH")
+	}
+	for _, want := range []string{"/opt/homebrew/bin", "/usr/local/bin"} {
+		if !strings.Contains(plist, want) {
+			t.Errorf("PATH is missing %s, where npm -g puts openclaw", want)
+		}
+	}
+}

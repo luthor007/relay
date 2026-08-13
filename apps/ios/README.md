@@ -193,9 +193,17 @@ the only input is speech fails in a quiet room, a loud room, and on a bad day."*
 
 `GlassesCatalog` is that list as data — 20 actions, each naming the transport
 method it calls, the protocol ids it produces, whether it is destructive, and
-whether it opens a microphone. The Commands screen is generated from it, and the
-consent gate is applied from the `opensMicrophone` flag in `CaptureCoordinator`,
-so a new action gets the gate for free and a new screen cannot route around it.
+whether it opens a microphone. The consent gate is applied from the
+`opensMicrophone` flag in `CaptureCoordinator`, so a new action gets the gate
+for free and a new screen cannot route around it.
+
+**There is no Commands screen right now.** It was generated from this catalog
+and lived as the app's second tab until 2026-08-12, when it was removed: an
+exhaustive control panel is the wrong second thing to see in a product you are
+supposed to talk to. The catalog and the test below are untouched, so the
+screen can come back cheaply and correctly — but until it does, only capture
+start/stop and the voice turn are reachable by hand, and the quiet-room
+argument above is only half answered.
 
 `CommandCatalogTests` re-parses `Transport.swift` — carried into the test bundle
 as a resource by `project.yml` — and fails if the protocol has grown a method

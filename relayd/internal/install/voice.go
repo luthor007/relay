@@ -66,15 +66,85 @@ func (v VoiceOutcome) Line() string {
 	}
 }
 
+// verifyVoice picks a voice and offers to pick again when the chosen one did
+// not answer. See repair.go.
+//
+// What counts as needing repair is narrower here than for a model, and getting
+// that right is the whole difficulty of this step. The device talks either way —
+// that is what the keyless fallback is for — so the loop must not open on:
+//
+//   - the phone, which cannot be tested from this machine at all and is not
+//     broken for failing a test that was never possible;
+//   - a deliberately skipped key, which chose the fallback on purpose and is a
+//     real answer rather than a failure;
+//   - a fallback that also failed, which is a network problem this box has and
+//     re-picking a voice will not fix.
+//
+// What is left is exactly the case worth re-asking about: you chose a voice,
+// you gave it a credential, and the credential did not work.
+func verifyVoice(ctx context.Context, opts Options) (VoiceOutcome, error) {
+	return verify(ctx, opts, repair[VoiceOutcome]{
+		ID:     "voice.repair",
+		Title:  "That voice is not working yet",
+		Choose: func() (VoiceOutcome, error) { return chooseVoice(ctx, opts) },
+		OK: func(v VoiceOutcome) bool {
+			return v.PrimaryOK() || !v.Option.Probeable || v.Option.ID == v.Fallback.ID || !v.OK()
+		},
+		Trouble: func(v VoiceOutcome) string { return voiceTrouble(v) },
+		Facts: func(v VoiceOutcome) DiagnoseFacts {
+			f := DiagnoseFacts{
+				What:   v.Option.Label + ", the voice",
+				Vendor: v.Option.Vendor,
+				Model:  v.Config.Model,
+				Ref:    v.Config.Credential,
+			}
+			for _, c := range v.Checks {
+				if c.Option == v.Option.ID {
+					f.Reason = string(c.Reason)
+					f.Detail = c.Detail
+				}
+			}
+			return f
+		},
+		FixLabel:      "Choose again — a different voice, or a different key",
+		ContinueLabel: "Leave it, and speak with the keyless voice for now",
+		GiveUp: "Leaving speech on the keyless voice. The device still talks — it is the one " +
+			"thing this step guarantees — and `relay voice` re-runs it whenever the key is ready.",
+	})
+}
+
+func voiceTrouble(v VoiceOutcome) string {
+	for _, c := range v.Checks {
+		if c.Option == v.Option.ID && c.Probed && !c.OK() {
+			s := fmt.Sprintf("%s did not answer: %s", v.Option.Label, c.Reason)
+			if advice := reasonAdvice(c.Reason); advice != "" {
+				s += "\n\n" + advice
+			}
+			s += fmt.Sprintf("\n\nSpeech falls back to %s, so the device is not mute either way.",
+				v.Fallback.Label)
+			return s
+		}
+	}
+	return fmt.Sprintf("%s could not be verified from this machine.", v.Option.Label)
+}
+
 func chooseVoice(ctx context.Context, opts Options) (VoiceOutcome, error) {
 	p := opts.Prompt
 	out := VoiceOutcome{Fallback: voice.Fallback()}
 
+	// One line per row, not two.
+	//
+	// Every row used to print quality · latency · cost and then a sentence
+	// underneath, and the sentence usually said the same thing again —
+	// "good to very good · streams · per-character" over "Very good voices,
+	// priced per character." Eight options that way is the longest block in the
+	// installer. The catalog's own hint is now one authored line carrying the
+	// same three facts, and the triple is the fallback for a row without one.
 	choices := make([]Choice, 0, len(voice.Catalog()))
 	for _, o := range voice.Catalog() {
-		hint := strings.Join([]string{o.Quality, o.Latency, o.Cost}, " · ")
-		if o.Hint != "" {
-			hint += "\n      " + o.Hint
+		hint := o.Hint
+		if hint == "" {
+			hint = strings.Join([]string{o.Quality, o.Latency, o.Cost}, " · ")
 		}
 		choices = append(choices, Choice{
 			ID: o.ID, Label: o.Label, Hint: hint, Recommended: o.Recommended,
@@ -82,13 +152,9 @@ func chooseVoice(ctx context.Context, opts Options) (VoiceOutcome, error) {
 	}
 
 	id, err := p.Select(Question{
-		ID:    "voice",
-		Title: "Choose a voice",
-		Body: "This is how Relay talks to you, so it is worth thirty seconds. Simba 3.2 is the " +
-			"recommendation: it streams, so the first audio arrives before the sentence is " +
-			"finished, and a typical user spends about $1.47 a month.\n\n" +
-			"Whatever you pick — including picking nothing — the keyless voice sits underneath " +
-			"it as an automatic fallback. A Relay device is never mute.",
+		ID:      "voice",
+		Title:   "Choose a voice",
+		Body:    "The keyless voice sits under whatever you pick, so it always speaks.",
 		Choices: choices,
 		Default: voice.Recommended().ID,
 	})
@@ -114,10 +180,9 @@ func chooseVoice(ctx context.Context, opts Options) (VoiceOutcome, error) {
 
 	if opt.API == voice.APILocal {
 		url, err := p.Input(Input{
-			ID:     "voice.base_url",
-			Prompt: "Local endpoint",
-			Body: "The OpenAI-shaped speech endpoint your Piper or Kokoro server exposes, " +
-				"e.g. http://127.0.0.1:8080/v1",
+			ID:       "voice.base_url",
+			Prompt:   "Local endpoint",
+			Body:     "e.g. http://127.0.0.1:8080/v1",
 			Optional: true,
 		})
 		if err != nil {
@@ -137,9 +202,7 @@ func chooseVoice(ctx context.Context, opts Options) (VoiceOutcome, error) {
 		})
 		switch {
 		case errors.Is(err, errCredentialSkipped):
-			p.Say("  No key for %s, so Relay will use %s. That is not a failure state: the "+
-				"device talks, merely not as well. Add a key later with `relay voice`.",
-				opt.Label, out.Fallback.Label)
+			p.Say("  Using %s instead. `relay voice` adds a key later.", out.Fallback.Label)
 			out.Option = out.Fallback
 			opt = out.Fallback
 			cfg = voice.Config{Option: opt.ID, HTTPClient: opts.HTTPClient, Lookup: opts.Lookup()}

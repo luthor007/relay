@@ -18,6 +18,11 @@ settings:
     # discovered — not as a side effect of creating the project.
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
+    # The paid team. Named here rather than left to Xcode to guess, because
+    # this machine has certificates for one team under two names — an older
+    # personal one and the company — and a device build that picks the wrong
+    # one fails with a provisioning error that says nothing about teams.
+    DEVELOPMENT_TEAM: 4JM6V69LDZ
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     GCC_WARN_ABOUT_RETURN_TYPE: YES_ERROR
 

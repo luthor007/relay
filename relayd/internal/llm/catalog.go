@@ -37,6 +37,24 @@ type Auth struct {
 	Kind  AuthKind
 	// Risk is the hint shown on the row when there is one. Empty for most.
 	Risk string
+
+	// BaseURL and API override the vendor's when this method reaches a
+	// different endpoint than the vendor's own.
+	//
+	// The Codex row is why these exist. A vendor used to be one endpoint with
+	// several ways of proving who you are; ChatGPT's subscription is a
+	// different endpoint speaking a different wire, and hanging that off the
+	// vendor meant every credential was checked against api.openai.com — where
+	// a subscription bearer is refused no matter how good it is.
+	BaseURL string
+	API     API
+	// Ref is the credential reference kind this method produces, when it is not
+	// a key the user can be asked for. Empty means "ask", which is every API
+	// key row.
+	Ref RefKind
+	// Model is the default model id for this method, when the vendor's default
+	// is not offered on it. Codex serves its own model names.
+	Model string
 }
 
 // VendorEntry is one group in the first-level menu.
@@ -65,9 +83,26 @@ type VendorEntry struct {
 // to us more, not less: our big model holds the MCP registry and a shell, so it
 // is not the place to economise — weaker tiers are easier to prompt-inject.
 const (
-	SmallModelDefault = "openai/gpt-5.6-luna"
-	BigModelDefault   = "anthropic/opus-5"
-	RecommendedVendor = "openrouter"
+	// SmallModelDefault changed on 2026-08-12, by decision rather than by
+	// measurement, and the tension is worth writing down where the next person
+	// will find it. §2b picks the small model on latency — it hears every
+	// utterance and answers in about 400ms, and "a big model thinking is dead
+	// air in your ear" is the whole argument for having two. A -pro tier is the
+	// work tier. If narration starts arriving late, this line is the first
+	// suspect, and a -flash tier is the fix.
+	SmallModelDefault = "deepseek/deepseek-v4-pro-0813"
+	// BigModelDefault is the intelligence, chosen on intelligence per dollar
+	// rather than on rank. BudgetModelDefault is the same job for about a sixth
+	// of the price and not far behind — offered on the model question rather
+	// than buried, because "which model" is where a monthly bill is actually
+	// decided and the installer is the only place it comes up.
+	BigModelDefault    = "x-ai/grok-4.6"
+	BudgetModelDefault = "deepseek/deepseek-v4-pro-0813"
+	RecommendedVendor  = "openrouter"
+	// CodexModelDefault is what the subscription endpoint serves. It is not the
+	// same catalog as the API — asking it for a platform model id is a 404, so
+	// the Codex rows carry their own default rather than inheriting one.
+	CodexModelDefault = "gpt-5.6-codex"
 )
 
 // Vendors returns the grouped vendor list, OpenRouter first because it is
@@ -81,21 +116,36 @@ func Vendors() []VendorEntry {
 			API:         APIOpenAI,
 			BaseURL:     "https://openrouter.ai/api/v1",
 			Recommended: true,
-			Note: "One key covers both models, and either can be swapped later without " +
-				"re-running setup. Everything else on this list works; this is just the " +
-				"shortest path.",
-			Auths: []Auth{{ID: "openrouter-key", Label: "API key", Kind: AuthAPIKey}},
+			Note:        "One key covers both models.",
+			Auths:       []Auth{{ID: "openrouter-key", Label: "API key", Kind: AuthAPIKey}},
 		},
 		{
 			ID:      "openai",
 			Label:   "OpenAI",
-			Hint:    "Codex OAuth + API key",
+			Hint:    "ChatGPT/Codex sign-in or API key",
 			API:     APIOpenAI,
 			BaseURL: "https://api.openai.com/v1",
 			Auths: []Auth{
-				{ID: "openai-codex", Label: "OpenAI Codex (ChatGPT OAuth)", Kind: AuthSubscription},
+				{
+					ID: "openai-codex", Label: "ChatGPT Login",
+					Kind: AuthSubscription, Ref: RefCodex,
+					BaseURL: CodexBaseURL, API: APICodex, Model: CodexModelDefault,
+				},
+				{
+					ID: "openai-codex-device", Label: "ChatGPT Device Pairing",
+					Kind: AuthDeviceCode, Ref: RefCodex,
+					BaseURL: CodexBaseURL, API: APICodex, Model: CodexModelDefault,
+				},
 				{ID: "openai-key", Label: "API key", Kind: AuthAPIKey},
 			},
+		},
+		{
+			ID:      "xai",
+			Label:   "xAI (Grok)",
+			Hint:    "API key",
+			API:     APIOpenAI,
+			BaseURL: "https://api.x.ai/v1",
+			Auths:   []Auth{{ID: "xai-key", Label: "API key", Kind: AuthAPIKey}},
 		},
 		{
 			ID:      "anthropic",
@@ -105,13 +155,16 @@ func Vendors() []VendorEntry {
 			BaseURL: "https://api.anthropic.com",
 			// The confusion here is predictable, so it is pre-empted rather than
 			// left for a support ticket.
+			// This used to print for every user, before the vendor menu, at four
+			// paragraphs. It is the same promise at a fifth of the length, and it
+			// now reaches the one person the question occurs to: whoever went
+			// looking for this row.
 			Note: "Your Claude Max plan still powers Claude Code on this machine — that is " +
-				"Anthropic's own client using its own login, and nothing about it changes. " +
-				"What it cannot do is power our orchestrator. That part needs an API key. " +
-				"claude setup-token and the community max-api-proxy both technically work, " +
-				"and both are subscription credentials used outside Anthropic's own client; " +
-				"Anthropic has blocked that before. We do not ship it as a row and will not " +
-				"support it when it breaks.",
+				"Anthropic's own client using its own login. What it cannot do is power our " +
+				"orchestrator. That part needs an API key.\n\n" +
+				"claude setup-token and the community max-api-proxy do work, and Anthropic has " +
+				"blocked that kind of use before. We do not ship it as a row and cannot support " +
+				"it when it breaks.",
 			Auths: []Auth{{ID: "anthropic-key", Label: "API key", Kind: AuthAPIKey}},
 		},
 		{
@@ -199,7 +252,7 @@ func Vendors() []VendorEntry {
 			Hint:   "Any OpenAI or Anthropic compatible endpoint",
 			API:    APIOpenAI,
 			Custom: true,
-			Note:   "Base URL and model id, plus which shape it speaks. The list is never a cage.",
+			Note:   "Base URL, model id, and which shape it speaks.",
 			Auths:  []Auth{{ID: "custom-key", Label: "API key", Kind: AuthAPIKey}},
 		},
 	}

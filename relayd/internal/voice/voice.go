@@ -110,13 +110,10 @@ func Catalog() []Option {
 			ID: "simba", Label: "Simba 3.2", Vendor: "simba",
 			Recommended: true, Default: true,
 			Synthesis: SynthHosted, Streams: true,
-			Quality: "best of the list",
-			Latency: "streams; first audio before the sentence ends",
-			Cost:    "$10 / M chars",
-			Hint:    "The recommendation. About $1.47/month at twenty exchanges a day.",
-			Note: "Simba streams, so the first audio arrives before the sentence is finished — " +
-				"which is where most of the perceived latency win is. A typical user spends " +
-				"about $1.47 a month, a heavy one about $4.95.",
+			Quality:         "best of the list",
+			Latency:         "streams; first audio before the sentence ends",
+			Cost:            "$10 / M chars",
+			Hint:            "best on the list, streams, about $1.47 a month",
 			NeedsCredential: true, API: APISimba,
 			BaseURL: "https://api.simba.audio/v1", DefaultModel: "simba-3.2", DefaultVoice: "aria",
 			Probeable: true, ProbeNote: "synthesises one word before the installer exits",
@@ -126,7 +123,7 @@ func Catalog() []Option {
 			Synthesis: SynthHosted, Streams: true,
 			Quality: "good to very good", Latency: "streams",
 			Cost:            "per-character, check the provider",
-			Hint:            "Very good voices, priced per character.",
+			Hint:            "very good, streams, priced per character",
 			NeedsCredential: true, API: APIElevenLabs,
 			BaseURL: "https://api.elevenlabs.io/v1", DefaultModel: "eleven_turbo_v2_5",
 			DefaultVoice: "21m00Tcm4TlvDq8ikWAM",
@@ -137,7 +134,7 @@ func Catalog() []Option {
 			Synthesis: SynthHosted, Streams: true,
 			Quality: "good to very good", Latency: "streams",
 			Cost:            "per-character, check the provider",
-			Hint:            "Low-latency streaming, priced per character.",
+			Hint:            "very good, low-latency streaming, per character",
 			NeedsCredential: true, API: APICartesia,
 			BaseURL: "https://api.cartesia.ai", DefaultModel: "sonic-2",
 			Probeable: true, ProbeNote: "synthesises one word before the installer exits",
@@ -147,7 +144,7 @@ func Catalog() []Option {
 			Synthesis: SynthHosted, Streams: true,
 			Quality: "good to very good", Latency: "streams",
 			Cost:            "per-character, check the provider",
-			Hint:            "Aura voices, priced per character.",
+			Hint:            "Aura voices, streams, per character",
 			NeedsCredential: true, API: APIDeepgram,
 			BaseURL: "https://api.deepgram.com/v1", DefaultModel: "aura-2-thalia-en",
 			Probeable: true, ProbeNote: "synthesises one word before the installer exits",
@@ -157,7 +154,7 @@ func Catalog() []Option {
 			Synthesis: SynthHosted, Streams: true,
 			Quality: "good to very good", Latency: "streams",
 			Cost:            "per-character, check the provider",
-			Hint:            "If you already have an OpenAI key, this is one fewer account.",
+			Hint:            "per character — one fewer account if you have an OpenAI key",
 			NeedsCredential: true, API: APIOpenAI,
 			BaseURL: "https://api.openai.com/v1", DefaultModel: "gpt-4o-mini-tts", DefaultVoice: "alloy",
 			Probeable: true, ProbeNote: "synthesises one word before the installer exits",
@@ -167,7 +164,7 @@ func Catalog() []Option {
 			Synthesis: SynthHosted, Streams: true,
 			Quality: "whatever it fronts", Latency: "varies",
 			Cost:            "one key, many voices",
-			Hint:            "One key, many voices — the same key can also cover both orchestrator models.",
+			Hint:            "one key, many voices — the same key covers both models",
 			NeedsCredential: true, API: APIOpenAI,
 			BaseURL: "https://openrouter.ai/api/v1", DefaultModel: "openai/gpt-4o-mini-tts", DefaultVoice: "alloy",
 			Probeable: true, ProbeNote: "synthesises one word before the installer exits",
@@ -177,11 +174,8 @@ func Catalog() []Option {
 			Keyless:   true,
 			Synthesis: SynthHosted, Streams: true,
 			Quality: "acceptable", Latency: "hosted, so a round trip",
-			Cost: "free, no credential",
-			Hint: "This is why skipping this step is safe: with no key at all, the device still talks.",
-			Note: "The keyless voice is the automatic fallback under every other choice, not just a " +
-				"row you can pick. If a key expires at 2am the glasses keep speaking — worse, but " +
-				"speaking. Mute is the one outcome this product cannot have.",
+			Cost:            "free, no credential",
+			Hint:            "free, no key — skipping this step is safe, it still talks",
 			NeedsCredential: false, API: APIEdge,
 			BaseURL:   "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud",
 			Probeable: true,
@@ -195,12 +189,7 @@ func Catalog() []Option {
 			Latency: "fastest — no network hop",
 			Cost:    "free",
 			// The one sentence in this file that must not be paraphrased.
-			Hint: "free and instant, but it sounds like a robot in your ear all day",
-			Note: "Synthesis happens on the handset, so this is the fastest option on the list — " +
-				"there is no round trip at all. What it is not is good: iOS ships Default-quality " +
-				"voices, the Enhanced and Premium ones need a 100 MB-plus download from " +
-				"Accessibility that most people never make, and Siri's voices are closed to " +
-				"third parties. Android quality swings by manufacturer.",
+			Hint:            "free and instant, but it sounds like a robot in your ear all day",
 			NeedsCredential: false, API: APINone,
 			Probeable: false,
 			ProbeNote: "nothing on this machine can test it: the synthesiser is the handset. " +

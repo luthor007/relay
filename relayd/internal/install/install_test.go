@@ -48,8 +48,25 @@ func happyProvider(t *testing.T, seen *[]string) *http.Client {
 		switch {
 		case strings.Contains(r.URL.Path, "/chat/completions"):
 			return jsonResp(200, `{"model":"m","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`, r), nil
+		case strings.Contains(r.URL.Path, "/responses"):
+			// The subscription endpoint streams and speaks Responses. It gets
+			// its own arm rather than falling through to the synthesis default,
+			// which would answer a model probe with fake audio.
+			return &http.Response{
+				StatusCode: 200,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body: io.NopCloser(strings.NewReader(
+					"data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n" +
+						"data: {\"type\":\"response.completed\",\"response\":{\"model\":\"m\"," +
+						"\"status\":\"completed\"}}\n\n")),
+				Request: r,
+			}, nil
 		case strings.Contains(r.URL.Path, "/v1/messages"):
 			return jsonResp(200, `{"model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`, r), nil
+		case strings.Contains(r.URL.Path, "/oauth/token"):
+			// A ChatGPT login Relay owns keeps only the refresh token, so every
+			// use of it starts by minting an access token here.
+			return jsonResp(200, `{"access_token":"at","refresh_token":"rt","expires_in":3600}`, r), nil
 		case strings.Contains(r.URL.Path, "voices/list"):
 			return jsonResp(200, `[{"Name":"en-US-AriaNeural"}]`, r), nil
 		default: // synthesis
@@ -141,6 +158,12 @@ func baseAnswers() map[string]string {
 		"entitlements.copilot":           "no",
 		"entitlements.coding_plan":       "no",
 		"entitlements.coding_plan.which": "zai-coding-plan",
+
+		// The fixture machine has no Node, so both the runtime rows and the bus
+		// now offer to fetch one. No, on purpose: the baseline install must not
+		// put a language runtime on a machine by default, and the tests that
+		// exercise the bootstrap say yes explicitly.
+		"node.install": "no",
 
 		"mcp.adopt":      "yes",
 		"service.linger": "yes",
@@ -302,7 +325,7 @@ func TestBaselineAccessOnly(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(script.Output(), "Nothing else is collected now") {
+	if !strings.Contains(script.Output(), "Nothing else — no mail, no calendar, no repos") {
 		t.Error("the install must say what it takes before it takes it")
 	}
 }
@@ -333,10 +356,18 @@ func TestSkippingTheVoiceStepStillTalks(t *testing.T) {
 	}
 }
 
-// A bad key is reported at setup, with the provider's own error, and the
-// installer still finishes. The alternative is discovering it at the glasses.
+// A bad key is reported at setup, with the provider's own error, the user is
+// offered the chance to fix it there and then, and declining still finishes the
+// install. The alternative is discovering it at the glasses.
 func TestBadCredentialIsReportedAtSetupAndDoesNotAbort(t *testing.T) {
-	opts, script, _ := newOpts(t, baseAnswers(), func(o *Options) {
+	answers := baseAnswers()
+	// Every probe 401s here, so all three steps offer the repair. Declining is
+	// what this test is about: the installer must finish anyway.
+	answers["voice.repair"] = "continue"
+	answers["models.small.repair"] = "continue"
+	answers["models.big.repair"] = "continue"
+
+	opts, script, _ := newOpts(t, answers, func(o *Options) {
 		o.HTTPClient = &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 			if strings.Contains(r.URL.Path, "voices/list") {
 				return jsonResp(200, `[]`, r), nil
@@ -347,6 +378,11 @@ func TestBadCredentialIsReportedAtSetupAndDoesNotAbort(t *testing.T) {
 	res, err := Run(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("a bad key must not abort the install: %v", err)
+	}
+	// The offer has to be made before the install is allowed to end on a dead
+	// credential — that is the whole of the verify/repair loop.
+	if !strings.Contains(script.Output(), "Small model — not working yet") {
+		t.Error("a failed probe must offer to fix it now, not just mention it later")
 	}
 	if res.Models.Small.Probe.Reason != llm.ReasonExpired {
 		t.Errorf("small model reason = %q, want expired", res.Models.Small.Probe.Reason)
@@ -369,11 +405,30 @@ func TestBadCredentialIsReportedAtSetupAndDoesNotAbort(t *testing.T) {
 // ORCHESTRATOR.md §2b, in as many words. This is the paragraph that pre-empts
 // the predictable support ticket.
 func TestClaudeHasNoSupportedPathAndTheInstallerSaysSo(t *testing.T) {
-	opts, script, _ := newOpts(t, baseAnswers(), nil)
+	// It is said on the Anthropic row rather than to everybody before the menu.
+	// The question — "why can I not use my Max plan?" — only exists once
+	// somebody has gone looking for this row, and charging every user four
+	// paragraphs to pre-empt it was the wrong trade. The promise is unchanged:
+	// whoever asks gets the whole answer, including the workaround.
+	answers := baseAnswers()
+	answers["models.small.vendor"] = "anthropic"
+	answers["models.small.auth"] = "anthropic-key"
+	answers["models.small.model"] = "opus-5"
+	answers["models.small.cred.kind"] = "env"
+	answers["models.small.cred.env"] = "ANTHROPIC_API_KEY"
+	answers["models.big.cred.kind"] = "env"
+	answers["models.big.cred.env"] = "OPENROUTER_API_KEY"
+	delete(answers, "models.big.reuse")
+	// Split so the literal never appears: the publish guard refuses any file
+	// matching a vendor key pattern, and it cannot tell a fake from a real one.
+	// index_test.go does the same, for the same reason.
+	t.Setenv("ANTHROPIC_API_KEY", "sk-"+"ant-abcdefgh")
+
+	opts, script, _ := newOpts(t, answers, nil)
 	if _, err := Run(context.Background(), opts); err != nil {
 		t.Fatal(err)
 	}
-	out := script.Output()
+	out := strings.Join(strings.Fields(script.Output()), " ")
 	for _, phrase := range []string{
 		"Your Claude Max plan still powers Claude Code on this machine",
 		"Anthropic's own client using its own login",
@@ -402,18 +457,17 @@ func TestVendorMenuIsTwoLevels(t *testing.T) {
 	answers := baseAnswers()
 	answers["models.small.vendor"] = "openai"
 	answers["models.small.auth"] = "openai-codex"
-	answers["models.small.login"] = "yes"
-	answers["models.small.model"] = "gpt-5.6-luna"
-	answers["models.small.cred.kind"] = "env"
-	answers["models.small.cred.env"] = "OPENAI_API_KEY"
+	answers["models.small.model"] = ""
+	// The ChatGPT row ends in a sign-in, not a credential question. This
+	// machine already has one, so the shortest path is to say so.
+	answers["models.small.chatgpt.how"] = "cli"
 	// Two different vendors, so the big model needs its own credential — there
 	// is nothing to reuse.
 	answers["models.big.cred.kind"] = "env"
 	answers["models.big.cred.env"] = "OPENROUTER_API_KEY"
 	delete(answers, "models.big.reuse")
-	t.Setenv("OPENAI_API_KEY", "sk-openai-abcdefgh")
 
-	opts, script, _ := newOpts(t, answers, nil)
+	opts, script, _ := newOpts(t, answers, withCodexLogin(t))
 	res, err := Run(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, script.Output())
@@ -438,11 +492,18 @@ func TestVendorMenuIsTwoLevels(t *testing.T) {
 		t.Errorf("auth = %+v, want the ChatGPT OAuth row", res.Models.Small.Auth)
 	}
 	out := script.Output()
-	if !strings.Contains(out, "OpenAI Codex (ChatGPT OAuth)") {
+	if !strings.Contains(out, "ChatGPT Login") {
 		t.Error("the subscription row must be labelled as what it is")
 	}
-	if !strings.Contains(out, "codex login") {
-		t.Error("a login flow we know the command for should print it")
+	// The old flow sent the user to another terminal and then asked which
+	// environment variable held the key. There is no key: `codex login` writes
+	// tokens that expire hourly. Relay reads the login it finds, or performs
+	// one itself, and never asks for a reference to a subscription.
+	if strings.Contains(out, "codex login") {
+		t.Error("the ChatGPT row must not send the user off to run a CLI login")
+	}
+	if strings.Contains(out, "Credential for OpenAI") {
+		t.Error("a subscription has no credential reference to ask for")
 	}
 
 	// Every vendor group carries its one-line hint, and Custom Provider is last.
@@ -500,6 +561,9 @@ func TestCustomProviderAutoDetectsByCalling(t *testing.T) {
 	answers["models.big.cred.env"] = "OPENROUTER_API_KEY"
 	delete(answers, "models.big.reuse")
 	t.Setenv("HOUSE_KEY", "sk-house-abcdefgh")
+	// The big model is not what this test is about, and it does not verify
+	// against a transport that only knows the house endpoint.
+	answers["models.big.repair"] = "continue"
 
 	var paths []string
 	opts, script, _ := newOpts(t, answers, func(o *Options) {
@@ -574,10 +638,17 @@ func TestInstallerOffersMissingRuntimesAndInstallsNothingUnasked(t *testing.T) {
 	if len(res.Runtimes.Installed) != 1 || res.Runtimes.Installed[0] != adapter.OpenCode {
 		t.Errorf("installed = %v, want just opencode", res.Runtimes.Installed)
 	}
-	// Relay has no verified install command for two of the five and says so
-	// rather than guessing a package name.
-	if len(res.Runtimes.Unknown) != 2 {
-		t.Errorf("unknown = %v, want openclaw and hermes named rather than guessed at", res.Runtimes.Unknown)
+	// Relay names what it cannot install rather than guessing a package name.
+	// That set shrinks only when a command is probed on a real machine, never
+	// because one looked plausible: OpenClaw left it on 2026-08-12, Hermes has
+	// not, and a row arriving here without evidence should fail this test.
+	if len(res.Runtimes.Unknown) != 1 || res.Runtimes.Unknown[0] != adapter.Hermes {
+		t.Errorf("unknown = %v, want hermes alone — the one still unprobed", res.Runtimes.Unknown)
+	}
+	for _, i := range Installers() {
+		if i.Runtime == adapter.OpenClaw && len(i.Methods) == 0 {
+			t.Error("OpenClaw's install command was probed; the table should carry it")
+		}
 	}
 	if !strings.Contains(script.Output(), "no install command it can run here") {
 		t.Error("an unknown install path must be stated, not silently skipped")
@@ -697,6 +768,10 @@ func TestPreflightDoesNotLoopOnAnIdenticalAnswer(t *testing.T) {
 	answers := baseAnswers()
 	answers["voice.cred.env"] = "RELAY_TEST_UNSET_ON_PURPOSE"
 	answers["voice.cred.retry"] = "yes"
+	// The reference never resolves, so the voice does not verify and the repair
+	// loop offers to pick again. This test is about the preflight not looping,
+	// so it declines — the two loops are bounded independently.
+	answers["voice.repair"] = "continue"
 
 	opts, script, _ := newOpts(t, answers, nil)
 	if _, err := Run(context.Background(), opts); err != nil {

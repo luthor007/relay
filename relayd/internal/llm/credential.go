@@ -29,6 +29,17 @@ const (
 	// RefVault reads Relay's own vault: "vault:<id>". Resolved through the
 	// SecretLookup hook so this package does not import the vault.
 	RefVault RefKind = "vault"
+	// RefCodex borrows the Codex CLI's ChatGPT login: "codex:~/.codex". The
+	// value is CODEX_HOME, spelled out rather than defaulted so a relocated
+	// home survives being written to config.toml.
+	//
+	// This is the fifth kind, and it is the one that is not a string on disk:
+	// it resolves to an access token minted at the moment of use, from the
+	// refresh token the CLI left behind. See codex.go. ORCHESTRATOR.md §2
+	// counts four kinds because when it was written a credential was always a
+	// key; a subscription is not, and pointing env: at one is the question with
+	// no correct answer.
+	RefCodex RefKind = "codex"
 	// RefInline is a literal secret. Supported because a custom provider in a
 	// test needs one, and discouraged everywhere else.
 	RefInline RefKind = "inline"
@@ -66,7 +77,7 @@ func ParseRef(s string) (CredentialRef, error) {
 	}
 	value = strings.TrimSpace(value)
 	switch RefKind(kind) {
-	case RefEnv, RefFile, RefExec, RefVault, RefInline:
+	case RefEnv, RefFile, RefExec, RefVault, RefInline, RefCodex:
 		if value == "" {
 			return CredentialRef{}, fmt.Errorf("%w: %q has no value", ErrUnresolvedRef, s)
 		}
@@ -99,6 +110,17 @@ const ExecTimeout = 20 * time.Second
 // Resolve turns the reference into a secret. lookup may be nil unless the
 // reference is a vault one.
 func (r CredentialRef) Resolve(ctx context.Context, lookup SecretLookup) (string, error) {
+	return r.ResolveWith(ctx, lookup, CodexOptions{})
+}
+
+// ResolveWith is Resolve with the Codex seams supplied.
+//
+// A "codex:" reference reads a filesystem and a Keychain, so resolving one
+// through the process's own is exactly the mistake the rest of this package
+// avoids: a test would read the developer's real ChatGPT login and pass on one
+// machine only. Everything else here is already injectable; this makes the
+// fifth kind match.
+func (r CredentialRef) ResolveWith(ctx context.Context, lookup SecretLookup, codex CodexOptions) (string, error) {
 	if r.IsZero() {
 		return "", ErrMissingCredential
 	}
@@ -142,6 +164,22 @@ func (r CredentialRef) Resolve(ctx context.Context, lookup SecretLookup) (string
 			return "", fmt.Errorf("%w: exec %q produced nothing", ErrUnresolvedRef, r.Value)
 		}
 		return v, nil
+
+	case RefCodex:
+		codex.Home = r.Value
+		codex.Lookup = lookup
+		auth, err := ResolveCodex(ctx, codex)
+		if err != nil {
+			return "", err
+		}
+		if auth.Mode == "apikey" {
+			// The home resolves, but to a key rather than the subscription this
+			// reference was chosen for. Hand back the key: it is what the user
+			// actually has, and the probe that follows will say whether the
+			// configured endpoint accepts it.
+			return auth.APIKey, nil
+		}
+		return auth.Access, nil
 
 	case RefVault:
 		if lookup == nil {

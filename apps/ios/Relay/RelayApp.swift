@@ -37,6 +37,44 @@ enum Composition {
         #endif
     }
 
+    /// The link to the box, or nil when nobody has said where the box is.
+    ///
+    /// Nil is a real state, not a failure: the app is useful without a box —
+    /// it captures, queues and holds the day — and an app that refuses to start
+    /// until it has been configured is worse at being opened for the first
+    /// time. `CaptureCoordinator` already treats the link as optional
+    /// throughout, so this needed no accommodation anywhere else.
+    ///
+    /// This used to be hardcoded nil, which meant every `link?.send(…)` in the
+    /// coordinator was a no-op and nothing the phone observed ever reached the
+    /// box. See `RelaydWebSocket` for why the socket carries a bearer token.
+    static func makeLink() -> RelaydLink? {
+        guard let address = BoxSettings.address,
+              let url = BoxSettings.socketURL(from: address),
+              let token = BoxSettings.token, !token.isEmpty
+        else { return nil }
+
+        // relayd has no device registry, so there is no issued DeviceCredential
+        // to carry. The token is the whole credential; the rest of this struct
+        // is filled with what is actually known, and the signing key is empty
+        // rather than invented, because nothing signs anything today.
+        let credential = DeviceCredential(
+            deviceId: DeviceIdentity.current,
+            boxId: url.host ?? "box",
+            boxName: url.host,
+            deviceToken: token,
+            signingKey: ""
+        )
+
+        return RelaydLink(
+            url: url,
+            credential: credential,
+            socketFactory: { url, subprotocols in
+                RelaydWebSocket(url: url, token: token, subprotocols: subprotocols)
+            }
+        )
+    }
+
     @MainActor
     static func makeModel() -> CaptureModel {
         // Explicitly typed: `??` between `FileQueueStore?` and `MemoryQueueStore`
@@ -48,13 +86,16 @@ enum Composition {
         // that come back with the restore.
         Task { try? await queue.restore() }
 
+        let link = makeLink()
+        link?.connect()
+
         return CaptureModel(
             glasses: makeTransport(),
             audio: SystemAudioSession(),
             snapshots: FileSnapshotStore.inApplicationSupport(),
             queue: queue,
             network: HotspotSyncNetwork(),
-            link: nil
+            link: link
         )
     }
 }
@@ -144,11 +185,21 @@ struct RootView: View {
     @EnvironmentObject private var model: CaptureModel
     @StateObject private var permissions = PermissionsModel()
 
+    /// No consent wall.
+    ///
+    /// There used to be one: three paragraphs before the app would show itself,
+    /// including a note about which recordings are legal in Québec. It was the
+    /// first thing anyone saw and it made opening the app feel like signing
+    /// something.
+    ///
+    /// Consent did not move — `CaptureCoordinator` says it "is checked here
+    /// rather than in a view", and it still is. `startCapture` refuses without
+    /// it. What changed is *when* it is asked: pressing Start is the consent,
+    /// because pressing Start is the act, and what it means is written next to
+    /// the button rather than on a page in front of the app.
     var body: some View {
         Group {
-            if !model.consentGiven {
-                ConsentView { model.grantConsent() }
-            } else if !permissions.allGranted {
+            if !permissions.allGranted {
                 PermissionsView(model: permissions)
             } else {
                 MainTabs()
@@ -158,8 +209,13 @@ struct RootView: View {
     }
 }
 
-/// Four tabs, because `docs/ORCHESTRATOR.md` §5 gives the app three jobs and one
-/// of them — "every glasses command, by hand" — needs a screen of its own.
+/// Capture, Sessions, Sync, Box.
+///
+/// There was a fifth — Commands, a generated list of all twenty catalog actions.
+/// It was the app's second tab and it read as a control panel, which is the
+/// wrong first impression for a product whose whole claim is that you talk to
+/// it. The catalog behind it is still in RelayKit and still tested; see the
+/// note in `Screens.swift` for what that costs.
 struct MainTabs: View {
     @EnvironmentObject private var model: CaptureModel
 
@@ -167,12 +223,12 @@ struct MainTabs: View {
         TabView {
             HomeView(onWithdrawConsent: { await model.withdrawConsent() })
                 .tabItem { Label("Capture", systemImage: "record.circle") }
-            CommandsView()
-                .tabItem { Label("Commands", systemImage: "slider.horizontal.3") }
             SessionsView()
                 .tabItem { Label("Sessions", systemImage: "list.bullet.rectangle") }
             SyncView()
                 .tabItem { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
+            BoxView()
+                .tabItem { Label("Box", systemImage: "server.rack") }
         }
         .tint(Palette.ink)
     }

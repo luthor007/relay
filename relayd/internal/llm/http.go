@@ -32,7 +32,7 @@ func (e *HTTPError) Error() string {
 // post sends a JSON body and returns the response, leaving the body open on
 // success so a stream can read it.
 func post(ctx context.Context, cfg Config, path string, payload any, headers func(h http.Header, key string)) (*http.Response, error) {
-	key, err := cfg.Credential.Resolve(ctx, cfg.Lookup)
+	key, err := cfg.Credential.ResolveWith(ctx, cfg.Lookup, cfg.Codex)
 	if err != nil {
 		return nil, err
 	}

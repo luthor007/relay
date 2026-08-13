@@ -57,6 +57,7 @@ import (
 	"github.com/luthor007/relay/relayd/internal/detect"
 	"github.com/luthor007/relay/relayd/internal/llm"
 	"github.com/luthor007/relay/relayd/internal/logx"
+	"github.com/luthor007/relay/relayd/internal/summarize"
 	"github.com/luthor007/relay/relayd/internal/vault"
 )
 
@@ -104,6 +105,25 @@ type Options struct {
 	// config while it is zero. See mcp.go.
 	Gateway MCPGateway
 
+	// ReadCodexAuth overrides detection of an existing Codex CLI login. Nil
+	// reads the real machine — the Keychain and CODEX_HOME/auth.json.
+	ReadCodexAuth func(llm.CodexOptions) (llm.CodexAuth, error)
+	// CodexDeviceLogin and CodexBrowserLogin override the two sign-in flows.
+	// Nil runs the real ones, which talk to auth.openai.com and, in the browser
+	// case, listen on a loopback port. Both are injected in tests for the
+	// obvious reason: neither belongs in one.
+	CodexDeviceLogin  func(context.Context, func(llm.CodexDevicePrompt) error) (llm.CodexTokens, error)
+	CodexBrowserLogin func(context.Context, func(string) error, func() (string, error)) (llm.CodexTokens, error)
+
+	// Diagnose overrides the model that reads a failed probe out loud. Nil
+	// means the real one, which is itself off unless a key for it is in the
+	// environment — so a test that sets neither makes no call and asserts on an
+	// installer that behaves exactly as it did before the feature existed.
+	Diagnose func(context.Context, DiagnoseFacts) string
+	// Redact is the secret detector every string is put through before it goes
+	// to a model provider. Nil means the measured one in internal/index.
+	Redact summarize.Redactor
+
 	// BinaryPath is where relayd was installed, for the service unit.
 	BinaryPath string
 	// ServiceName overrides the unit name, for tests.
@@ -113,9 +133,22 @@ type Options struct {
 	// UID is the launchd domain to bootstrap into. Zero means this process's.
 	UID int
 
+	// nodeAsk is the once-per-run guard on the Node question. A pointer because
+	// Options is passed by value everywhere in this package, and a second step
+	// finding Node still missing means the user already said no.
+	nodeAsk *bool
+
 	Now  func() time.Time
 	Rand io.Reader
 	Log  *slog.Logger
+}
+
+func (o Options) nodeAsked() bool { return o.nodeAsk != nil && *o.nodeAsk }
+
+func (o Options) markNodeAsked() {
+	if o.nodeAsk != nil {
+		*o.nodeAsk = true
+	}
 }
 
 // Vault is the slice of the credential vault this package needs. MEMORY.md §6
@@ -133,9 +166,11 @@ type Result struct {
 	// baseline only, and a test asserts this list never grows here.
 	AccessRequested []string
 
-	Runtimes  RuntimeOutcome
-	Voice     VoiceOutcome
-	Models    ModelsOutcome
+	Runtimes RuntimeOutcome
+	Voice    VoiceOutcome
+	Models   ModelsOutcome
+	// Bus is OpenClaw's Gateway, which runs the agent sessions.
+	Bus       BusOutcome
 	Embedding EmbeddingOutcome
 	MCP       MCPOutcome
 	Service   ServiceOutcome
@@ -192,13 +227,17 @@ func BaselineAccess() []string {
 	return []string{"shell", "filesystem", "process control"}
 }
 
-const accessBody = `Relay runs on this machine, under your account. That means shell, ` +
-	`filesystem and process control — which you already granted by running this command.
+// accessBody is ORCHESTRATOR.md §4b's disclosure, cut to what a person reads.
+//
+// It used to be four sentences about grant granularity and read/write splits.
+// All of it was true and none of it was needed here: nothing on this screen is
+// being granted, so the paragraph explaining how grants work was answering a
+// question nobody had yet. What is left is the two facts that matter before the
+// first question — what this takes now, and that it takes nothing else.
+const accessBody = `Shell, filesystem and processes on this machine, under your account.
 
-Nothing else is collected now. No Gmail, no calendar, no repos, no printer. Those are ` +
-	`proposed later, one at a time, when something you actually did makes one useful — and ` +
-	`each one says what it opens before you grant it. Read and write are separate grants, ` +
-	`and anything with consequences outside this machine asks out loud, every time.`
+Nothing else — no mail, no calendar, no repos. Those get asked for later, one at a time, ` +
+	`when something you did makes one useful.`
 
 // Run performs the install.
 func Run(ctx context.Context, opts Options) (Result, error) {
@@ -210,9 +249,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	p := opts.Prompt
-	p.Section("Relay", "One command, on a machine that stays on. This takes a few minutes, and "+
-		"the slow part is authentication: every agent has its own login, and on a headless box "+
-		"that means one device-code flow at a time. Nothing here is hidden from you.")
+	// No preamble. Telling somebody what they are about to do is not doing it,
+	// and "this takes a few minutes, the slow part is authentication" is a
+	// sentence they can only act on by waiting. The first thing on screen is
+	// the first thing that is true.
+	p.Section("Relay", "")
 
 	// 1. Say what this takes, before it takes anything.
 	p.Section("What this install takes", accessBody)
@@ -231,7 +272,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	res.Warnings = append(res.Warnings, rt.Warnings...)
 
 	// 4. Voice.
-	v, err := chooseVoice(ctx, opts)
+	v, err := verifyVoice(ctx, opts)
 	if err != nil {
 		return res, err
 	}
@@ -247,6 +288,30 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	res.Models = m
 	res.Config.Models = m.Config
 	res.Warnings = append(res.Warnings, m.Warnings...)
+
+	// 5a. The bus. Still after the models, but no longer because it borrows
+	// their credential: it does not, and trying to cost a whole install (see
+	// bus.go rule 2). It stays here because the model menu has just explained
+	// which plan powers which runtime, and the Gateway is the second consumer
+	// of that same answer.
+	bus, err := chooseBus(ctx, opts, rep)
+	if err != nil {
+		return res, err
+	}
+	res.Bus = bus
+	res.Config.Bus = bus.Config
+	res.Warnings = append(res.Warnings, bus.Warnings...)
+
+	// The MCP step can only point runtimes at a gateway that exists, and until
+	// now nothing ever set one — so it recorded an inventory and changed
+	// nothing, on every install. See mcp.go's Zero check.
+	if opts.Gateway.Zero() && bus.Config.URL != "" {
+		opts.Gateway = MCPGateway{
+			Name:    "relay",
+			Command: "openclaw",
+			Args:    []string{"mcp", "serve"},
+		}
+	}
 
 	// 5b. MEMORY.md §6's second arrival path, and the only moment it can
 	// honestly run: the runtimes' own config files are enumerable now, with the
@@ -346,6 +411,10 @@ func (o Options) withDefaults() Options {
 	if o.FS == nil {
 		o.FS = detect.OSWriteFS{}
 	}
+	if o.nodeAsk == nil {
+		asked := false
+		o.nodeAsk = &asked
+	}
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -435,10 +504,8 @@ func backfillNotice(rep detect.Report, emb EmbeddingOutcome) BackfillNotice {
 		names = append(names, string(r))
 	}
 	n.Message = fmt.Sprintf(
-		"relayd will index %s of history from %s in the background, starting now. "+
-			"It is incremental and resumable, so interrupting it costs nothing, and your "+
-			"glasses already work — this only makes them know what you have been doing. "+
-			"Transcripts stay where they are; Relay stores a summary and a pointer, never a copy.",
+		"Indexing %s of history from %s in the background. Interrupting it costs nothing, "+
+			"and Relay stores summaries, never copies.",
 		humanBytes(&n.Bytes), strings.Join(names, ", "))
 
 	// Say which half of retrieval this run is building, because it is the thing
@@ -465,6 +532,7 @@ func summarise(p Prompter, res Result) {
 	p.Say("  small     %s", res.Models.Small.Line())
 	p.Say("  big       %s", res.Models.Big.Line())
 	p.Say("  embedding %s", res.Embedding.Line())
+	p.Say("  bus       %s", res.Bus.Line())
 	if res.MCP.Line() != "" {
 		p.Say("  mcp       %s", res.MCP.Line())
 	}

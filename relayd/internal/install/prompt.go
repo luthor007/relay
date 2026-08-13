@@ -102,6 +102,16 @@ type Prompter interface {
 	Select(q Question) (string, error)
 	Confirm(q Confirm) (bool, error)
 	Input(q Input) (string, error)
+
+	// Interactive reports whether there is somebody there to answer a question
+	// that was not planned for.
+	//
+	// It exists for the verify/repair loop and nothing else. Every other
+	// question in the installer is asked exactly once, so a prompter that takes
+	// defaults answers it and moves on; a loop is the one shape where "take the
+	// default" and "ask again" are the same instruction forever. [Auto] is the
+	// only implementation that returns false.
+	Interactive() bool
 }
 
 // ---------------------------------------------------------------- terminal
@@ -138,6 +148,9 @@ func (t *Terminal) r() *bufio.Reader {
 	}
 	return t.reader
 }
+
+// Interactive is true: there is a person at the other end of it.
+func (t *Terminal) Interactive() bool { return true }
 
 func (t *Terminal) Say(format string, args ...any) {
 	fmt.Fprintf(t.w(), format+"\n", args...)
@@ -335,6 +348,11 @@ func NewScript(answers map[string]string) *Script {
 // Output is everything the installer printed, joined.
 func (s *Script) Output() string { return strings.Join(s.Log, "\n") }
 
+// Interactive is true, because a script stands in for a person: a test that
+// could not exercise the repair loop would be a test of a different installer.
+// It answers by question id, so a loop terminates on [maxRepairAttempts].
+func (s *Script) Interactive() bool { return true }
+
 func (s *Script) Say(format string, args ...any) {
 	s.Log = append(s.Log, fmt.Sprintf(format, args...))
 }
@@ -429,6 +447,11 @@ type Auto struct {
 	// an unattended run must not opt into anything that defaults to off.
 	Log []string
 }
+
+// Interactive is false. `relay setup --yes` has nobody to ask, so a step that
+// did not verify is reported and carried into the summary rather than retried
+// against the same answers until the attempt cap runs out.
+func (a *Auto) Interactive() bool { return false }
 
 func (a *Auto) Say(format string, args ...any) {
 	line := fmt.Sprintf(format, args...)

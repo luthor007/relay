@@ -47,6 +47,7 @@ type Config struct {
 	Routing    Routing                  `toml:"routing"`
 	Connectors Connectors               `toml:"connectors"`
 	Relay      Relay                    `toml:"relay"`
+	Bus        Bus                      `toml:"bus"`
 	Runtimes   map[string]RuntimeConfig `toml:"runtimes"`
 }
 
@@ -115,6 +116,45 @@ func isLoopbackHost(host string) bool {
 		return true
 	}
 	return strings.HasPrefix(host, "127.")
+}
+
+// Bus is the OpenClaw Gateway that runs the agent sessions.
+//
+// Empty is a supported and common state, and means the same as it does for
+// [Relay]: this box drives Claude Code and Codex through relayd's own adapters
+// and nothing is missing that anybody asked for. What is not supported is a URL
+// that looks configured and dials nothing, so an unusable one is refused at
+// load rather than discovered at the first utterance.
+type Bus struct {
+	// URL is the Gateway's WebSocket, ws:// or wss://. `openclaw gateway
+	// status` prints an http:// one; both are accepted and the scheme is
+	// rewritten, because what a person pastes is what it printed.
+	URL string `toml:"url"`
+	// Token is a REFERENCE to the Gateway token — "vault:<id>", "env:NAME" —
+	// never the token. OpenClaw keeps its own copy in plaintext in
+	// openclaw.json; that is theirs to fix, and no reason for Relay to keep a
+	// second plaintext copy in a file people paste into support tickets.
+	Token string `toml:"token"`
+}
+
+// Enabled reports whether this box should dial a Gateway.
+func (b Bus) Enabled() bool { return strings.TrimSpace(b.URL) != "" }
+
+func (b Bus) validate() error {
+	raw := strings.TrimSpace(b.URL)
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("config: bus.url %q is not a url", b.URL)
+	}
+	switch u.Scheme {
+	case "ws", "wss", "http", "https":
+	default:
+		return fmt.Errorf("config: bus.url is %s://, and the Gateway speaks ws:// or wss://", u.Scheme)
+	}
+	return nil
 }
 
 // Connectors is ORCHESTRATOR.md §4b's missing half: what *could* be connected
@@ -420,8 +460,12 @@ func Default() Config {
 		Listen: DefaultListen,
 		Log:    Log{Level: "info", Format: "text"},
 		Models: Models{
-			Small: Model{Vendor: "openrouter", Model: "openai/gpt-5.6-luna"},
-			Big:   Model{Vendor: "openrouter", Model: "anthropic/opus-5"},
+			// Kept in step with llm.SmallModelDefault by hand: config is a leaf
+			// package and cannot import llm. The installer's suggestion and the
+			// daemon's fallback disagreeing is invisible until `relay status`
+			// prints one and the wizard offers the other.
+			Small: Model{Vendor: "openrouter", Model: "deepseek/deepseek-v4-pro-0813"},
+			Big:   Model{Vendor: "openrouter", Model: "x-ai/grok-4.6"},
 		},
 		// Both ids come from the catalog rather than being restated here. They
 		// were restated, and the fallback drifted to "edge-tts" against a catalog
@@ -599,12 +643,16 @@ func (c Config) Validate() error {
 	if err := c.Relay.validate(); err != nil {
 		return err
 	}
+	if err := c.Bus.validate(); err != nil {
+		return err
+	}
 	// A pasted secret is the one config mistake worth refusing outright: it
 	// ends up in a backup, a screenshot and a support ticket. References only.
 	for name, m := range map[string]string{
 		"models.small.credential": c.Models.Small.Credential,
 		"models.big.credential":   c.Models.Big.Credential,
 		"voice.credential":        c.Voice.Credential,
+		"bus.token":               c.Bus.Token,
 		"embedding.credential":    c.Embedding.Credential,
 	} {
 		if err := checkRef(name, m); err != nil {
@@ -672,7 +720,7 @@ func (r Routing) validate() error {
 
 // knownRefPrefixes mirrors llm.RefKind. It is duplicated rather than imported
 // so config stays a leaf package that anything can depend on.
-var knownRefPrefixes = []string{"env:", "file:", "exec:", "vault:", "inline:"}
+var knownRefPrefixes = []string{"env:", "file:", "exec:", "vault:", "inline:", "codex:"}
 
 func checkRef(field, ref string) error {
 	if ref == "" {
@@ -688,7 +736,7 @@ func checkRef(field, ref string) error {
 	// pasted secret.
 	for i := range ref {
 		if ref[i] == ':' {
-			return fmt.Errorf("config: %s looks like a pasted secret; use env:, file:, exec: or vault: instead", field)
+			return fmt.Errorf("config: %s looks like a pasted secret; use env:, file:, exec:, vault: or codex: instead", field)
 		}
 	}
 	return nil

@@ -15,32 +15,15 @@ enum Palette {
 
 // MARK: - consent
 
-struct ConsentView: View {
-    let onAccept: () -> Void
-
-    var body: some View {
-        Screen {
-            Text("Before you start")
-                .font(.system(size: 32, weight: .medium))
-                .foregroundStyle(Palette.ink)
-
-            Text("""
-            Relay records audio from your glasses while you wear them. The glasses show a light \
-            when they are recording, and you cannot turn that light off from this app.
-
-            Recording keeps running on the glasses even when your phone is out of range — the day \
-            is stored on the glasses and syncs later.
-
-            In Québec and many other places, recording a conversation you are not part of is \
-            illegal. Recording one you are part of is not. That distinction is yours to keep.
-            """)
-            .font(.system(size: 16))
-            .foregroundStyle(Palette.inkMid)
-
-            PrimaryButton("I understand — enable capture", action: onAccept)
-        }
-    }
-}
+// ConsentView was here: "Before you start", three paragraphs, and a button
+// reading "I understand — enable capture". It was the first thing the app
+// showed and it had to be dismissed before anything else could be seen.
+//
+// Deleted rather than left unreferenced. The consent it collected is still
+// collected — CaptureCoordinator refuses to record without it — but it is asked
+// by pressing Start, and what it means is written beside that button. The
+// longer text is at the bottom of the same screen, next to the control that
+// withdraws it.
 
 // MARK: - permissions
 
@@ -133,6 +116,13 @@ struct HomeView: View {
                 SecondaryButton("Stop capture") { await model.stopCapture() }
             } else {
                 PrimaryButton("Start capture") { Task { await model.startCapture() } }
+                // The one fact that has to be read before the button is pressed
+                // rather than after, because it is the one that affects people
+                // who did not press it.
+                Text("The glasses show a light the whole time they record. "
+                     + "This app cannot turn it off.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.inkDim)
             }
 
             if model.status.captureEnabled {
@@ -174,6 +164,19 @@ struct HomeView: View {
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.live)
                 }
+            }
+
+            // What the consent wall used to say, kept where someone can find it
+            // when they want it instead of before they have seen the app.
+            Card {
+                Text("Recording keeps running on the glasses even when your "
+                     + "phone is out of range. The day is stored on the glasses "
+                     + "and syncs later.\n\n"
+                     + "In many places, recording a conversation you are not "
+                     + "part of is illegal, and recording one you are part of "
+                     + "is not. That distinction is yours to keep.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.inkDim)
             }
 
             Button {

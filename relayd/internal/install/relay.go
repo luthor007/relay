@@ -67,21 +67,18 @@ func (r RelayOutcome) Line() string {
 	return "on, through " + r.URL
 }
 
-const relayBody = "Your phone can always reach this machine when they are on the same network. " +
-	"Away from home — on cellular, at work — it cannot, because this machine is behind a " +
-	"router that does not accept incoming connections.\n\n" +
-	"The relay fixes that without any router configuration: both sides dial out to it and it " +
-	"passes bytes between them. It is ours, it is free, and there is nothing to run.\n\n" +
-	"What it can see: that a machine with your box's identifier is online, and that something " +
-	"connected to it. What it cannot see: anything you or your agents say. The traffic is " +
-	"end-to-end encrypted between your phone and this machine, and the relay holds no logs of " +
-	"it and nothing on disk at all.\n\n" +
-	"If your phone and this machine are always on the same network, you do not need this."
+// The privacy paragraph is the one that earned its place and the one that got
+// shortest: what the relay can see is two facts, and two facts do not need
+// eighty words. Skip it if your phone is always on this network.
+const relayBody = "Lets your phone reach this machine from outside your network, with no " +
+	"router setup.\n\n" +
+	"What it can see: that your box is online. What it cannot see: anything you or your " +
+	"agents say — that traffic is end-to-end encrypted and the relay keeps no logs.\n\n" +
+	"If your phone is always on this network, you do not need this."
 
 // chooseRelay asks whether this box should be reachable from outside.
 func chooseRelay(ctx context.Context, opts Options) (RelayOutcome, error) {
 	p := opts.Prompt
-	p.Section("Reaching this machine from anywhere", relayBody)
 
 	// Already configured wins without a question. Re-running the installer on a
 	// working box should not offer to turn off something that is on — the
@@ -96,6 +93,7 @@ func chooseRelay(ctx context.Context, opts Options) (RelayOutcome, error) {
 	choice, err := p.Select(Question{
 		ID:    "relay",
 		Title: "Reach this machine from anywhere?",
+		Body:  relayBody,
 		Choices: []Choice{
 			{ID: "hosted", Label: "Yes — use the relay we run", Hint: DefaultRelay, Recommended: true},
 			{ID: "own", Label: "Yes — use my own relay", Hint: "you run cmd/relay-rendezvous somewhere"},

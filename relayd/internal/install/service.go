@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/luthor007/relay/relayd/internal/detect"
@@ -166,12 +168,9 @@ func registerSystemd(ctx context.Context, opts Options, name, binary string) (Se
 	// for that user ends — so the box works until the first logout and then
 	// quietly does not, which is the worst shape a failure can have.
 	yes, err := opts.Prompt.Confirm(Confirm{
-		ID:     "service.linger",
-		Prompt: "Keep relayd running when you log out?",
-		Body: "systemd stops user services at logout unless lingering is enabled for your " +
-			"account. On a machine that is meant to stay on, that means Relay would work " +
-			"until the first time you close the session and then stop, silently.\n\n" +
-			"Relay would run: loginctl enable-linger",
+		ID:      "service.linger",
+		Prompt:  "Keep relayd running when you log out?",
+		Body:    "Runs: loginctl enable-linger",
 		Default: true,
 	})
 	if err != nil {
@@ -276,6 +275,39 @@ func reportService(p Prompter, s ServiceOutcome) {
 	}
 }
 
+// servicePATH is the PATH a booted relayd gets, and it exists because launchd
+// does not give it one worth having.
+//
+// A LaunchAgent inherits a minimal PATH — roughly /usr/bin:/bin:/usr/sbin:/sbin
+// — not the shell's. So a relayd that finds `openclaw` perfectly well when you
+// run it by hand cannot find it at all after a reboot, and neither can it find
+// `node`, which OpenClaw needs to start. The failure is silent and looks like
+// the Gateway being down.
+//
+// This is deliberately not the installing user's whole environment: copying
+// $PATH into a plist bakes one shell's state into a boot-time service. It is
+// the small set of places the things relayd shells out to actually live, plus
+// wherever the current process found node — because on a machine using nvm that
+// directory is version-numbered and unguessable.
+func servicePATH() string {
+	dirs := []string{
+		"/opt/homebrew/bin", // Homebrew on Apple silicon
+		"/usr/local/bin",    // Homebrew on Intel, and most manual installs
+		"/usr/bin", "/bin", "/usr/sbin", "/sbin",
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append([]string{filepath.Join(home, ".local", "bin")}, dirs...)
+	}
+	// nvm puts node under a version-numbered directory that nothing can guess,
+	// so the one this process is using is the only reliable source.
+	if p, err := exec.LookPath("node"); err == nil {
+		if d := filepath.Dir(p); d != "" && !contains(dirs, d) {
+			dirs = append([]string{d}, dirs...)
+		}
+	}
+	return strings.Join(dirs, ":")
+}
+
 func launchdPlist(label, binary, configPath, logDir string) string {
 	args := "    <string>" + xmlEscape(binary) + "</string>\n"
 	if configPath != "" {
@@ -290,6 +322,11 @@ func launchdPlist(label, binary, configPath, logDir string) string {
   <key>ProgramArguments</key>
   <array>
 ` + args + `  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>` + xmlEscape(servicePATH()) + `</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>

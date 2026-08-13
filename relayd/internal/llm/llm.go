@@ -26,14 +26,21 @@ import (
 	"time"
 )
 
-// API is the wire shape a provider speaks. Two cover the whole vendor list:
-// OpenAI-compatible carries OpenRouter and most of the rest, and
+// API is the wire shape a provider speaks. Two cover almost the whole vendor
+// list: OpenAI-compatible carries OpenRouter and most of the rest, and
 // Anthropic-compatible carries the one that is not.
+//
+// [APICodex] is the third, and it exists because a ChatGPT subscription is not
+// an OpenAI API key wearing a different hat: the plan is only spendable at
+// chatgpt.com/backend-api/codex, which speaks the Responses API. Choosing the
+// Codex row and leaving the shape at "openai" produces a 401 that looks like a
+// bad login and is not one. See codexwire.go.
 type API string
 
 const (
 	APIOpenAI    API = "openai"
 	APIAnthropic API = "anthropic"
+	APICodex     API = "codex"
 )
 
 // Role is a message role.
@@ -188,6 +195,11 @@ type Config struct {
 	// Lookup resolves a "vault:<id>" reference. Wired by the orchestrator so
 	// this package does not depend on the vault.
 	Lookup SecretLookup
+	// Codex supplies the seams a "codex:" reference resolves through — the
+	// filesystem holding auth.json and the Keychain beside it. The zero value
+	// reads the real machine, which is right for the daemon and wrong for a
+	// test, so the installer passes its own.
+	Codex CodexOptions
 	// Timeout defaults to 60s, and to ProbeTimeout for probes.
 	Timeout time.Duration
 }
@@ -227,6 +239,8 @@ func New(cfg Config) (Provider, error) {
 		return &openaiProvider{cfg: cfg}, nil
 	case APIAnthropic:
 		return &anthropicProvider{cfg: cfg}, nil
+	case APICodex:
+		return &codexProvider{cfg: cfg}, nil
 	default:
 		return nil, errors.New("llm: unknown API shape " + string(cfg.API))
 	}

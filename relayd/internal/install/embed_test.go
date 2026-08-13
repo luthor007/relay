@@ -236,7 +236,7 @@ func TestLocalEmbeddingIsInstalledPulledAndProbed(t *testing.T) {
 
 	// The exact install command is shown before it is agreed to, like every
 	// other install in this installer.
-	if !strings.Contains(script.Output(), "Relay would run: sh -c curl") {
+	if !strings.Contains(script.Output(), "Runs: sh -c curl") {
 		t.Errorf("the install command must be printed before it runs:\n%s", script.Output())
 	}
 }
@@ -266,8 +266,8 @@ func TestEmbeddingStepRunsBeforeThePairingCode(t *testing.T) {
 	}
 	out := script.Output()
 
-	modelsIdx := strings.Index(out, "Choose the orchestrator models")
-	embedIdx := strings.Index(out, "Choose an embedding model")
+	modelsIdx := strings.Index(out, "Choose the models")
+	embedIdx := strings.Index(out, "## Search")
 	pairIdx := strings.Index(out, res.Pairing)
 	histIdx := strings.Index(out, "Your history")
 
@@ -470,7 +470,7 @@ func TestCopyDoesNotClaimLocalSavesMoney(t *testing.T) {
 	}
 	out := strings.ToLower(script.Output())
 
-	start := strings.Index(out, "choose an embedding model")
+	start := strings.Index(out, "## search")
 	if start < 0 {
 		t.Fatal("no embedding section in the output")
 	}

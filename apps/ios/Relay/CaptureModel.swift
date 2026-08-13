@@ -106,7 +106,18 @@ final class CaptureModel: ObservableObject {
 
     // MARK: - capture
 
+    /// Starting capture is the consent.
+    ///
+    /// The gate is still the coordinator's — it refuses to record without a
+    /// granted consent, and that refusal is the guarantee. What this does is
+    /// answer it at the moment the person acts, rather than on a wall shown
+    /// before the app. Pressing a button that says it starts recording, next to
+    /// a line saying what recording does, is a clearer act of consent than
+    /// agreeing to three paragraphs to get past a screen.
+    ///
+    /// Withdrawing is unchanged and still one tap, at the bottom of this screen.
     func startCapture() async {
+        if !consentGiven { coordinator.grantConsent() }
         do { try await coordinator.startCapture() } catch { log(error) }
         await refreshFiles()
     }

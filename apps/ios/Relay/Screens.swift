@@ -1,134 +1,20 @@
 import RelayKit
 import SwiftUI
 
-// MARK: - every glasses command, by hand
-
-/// `docs/ORCHESTRATOR.md` §5, job two. The screen is *generated* from
-/// ``GlassesCatalog`` rather than hand-written, so a command added to the
-/// transport shows up here without anyone remembering to add a button — and
-/// `CommandCatalogTests` fails the build if one is ever missing.
-struct CommandsView: View {
-    @EnvironmentObject private var model: CaptureModel
-    @State private var selectedFile: String?
-    @State private var confirming: GlassesAction?
-
-    var body: some View {
-        Screen {
-            Text("Commands")
-                .font(.system(size: 32, weight: .medium))
-                .foregroundStyle(Palette.ink)
-
-            Text("Everything the voice loop can do, by hand. A product whose only "
-                + "input is speech fails in a quiet room.")
-                .font(.system(size: 14))
-                .foregroundStyle(Palette.inkMid)
-
-            if !model.files.isEmpty {
-                Card {
-                    Text("File for the commands that need one")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Palette.inkDim)
-                    Picker("File", selection: $selectedFile) {
-                        Text("—").tag(String?.none)
-                        ForEach(model.files, id: \.name) { file in
-                            Text(file.uploaded ? file.name : "\(file.name) · not synced")
-                                .tag(String?.some(file.name))
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(Palette.ink)
-                }
-            }
-
-            ForEach(CommandGroup.allCases, id: \.rawValue) { group in
-                let actions = GlassesCatalog.actions(in: group)
-                if !actions.isEmpty {
-                    Text(group.rawValue.uppercased())
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Palette.inkDim)
-                    Card {
-                        ForEach(actions) { action in
-                            CommandRow(action: action) {
-                                if action.destructive {
-                                    confirming = action
-                                } else {
-                                    Task { await model.run(action, argument: selectedFile) }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !model.consoleLines.isEmpty {
-                Text("CONSOLE")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.inkDim)
-                Card {
-                    // Newest first: the answer to "what did that do" is always
-                    // the last line, and scrolling to find it is a tax.
-                    ForEach(Array(model.consoleLines.reversed().enumerated()), id: \.offset) { entry in
-                        Text(entry.element)
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(Palette.inkMid)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-            }
-        }
-        .task { await model.refreshFiles() }
-        .confirmationDialog(
-            confirming?.title ?? "",
-            isPresented: Binding(
-                get: { confirming != nil },
-                set: { if !$0 { confirming = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            if let action = confirming {
-                Button(action.title, role: .destructive) {
-                    let argument = selectedFile
-                    confirming = nil
-                    Task { await model.run(action, argument: argument) }
-                }
-            }
-            Button("Cancel", role: .cancel) { confirming = nil }
-        }
-    }
-}
-
-private struct CommandRow: View {
-    let action: GlassesAction
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(action.title)
-                        .font(.system(size: 15))
-                        .foregroundStyle(action.destructive ? Palette.live : Palette.ink)
-                    if !action.protocolIds.isEmpty {
-                        // The command id, visible. Whoever is holding a packet
-                        // capture should not have to guess which row produced
-                        // which frame.
-                        Text(action.protocolIds.joined(separator: " · "))
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Palette.inkDim)
-                    }
-                }
-                Spacer()
-                if action.opensMicrophone {
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.live)
-                }
-            }
-            .padding(.vertical, 6)
-        }
-    }
-}
-
+// The Commands screen was here: a generated list of all 20 GlassesCatalog
+// actions, one row each, as a tab of its own. Removed — it was an exhaustive
+// control panel in a product whose first screen should say what to do.
+//
+// GlassesCatalog and CommandCatalogTests stay in RelayKit, untouched. The
+// catalog is the load-bearing half: it is data, it names the transport method
+// and protocol ids behind each action, and the test still fails the build if a
+// transport method ever lacks one. Regenerating a screen from it is an
+// afternoon; re-deriving the catalog would not be.
+//
+// ORCHESTRATOR.md 5 job two — "everything the voice loop can do should be
+// tappable" — is now only partly met: start and stop capture, and the voice
+// turn, are on the main screen. The other seventeen actions are not reachable
+// by hand. That gap is recorded there rather than papered over here.
 // MARK: - sessions and approvals
 
 struct SessionsView: View {

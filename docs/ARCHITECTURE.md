@@ -1,15 +1,20 @@
 # UU Lab glasses — system architecture
 
-*Last updated: 2026-08-08. Supersedes AGENT-BRIEF §8-B/C/D, which described these
+*Last updated: 2026-08-13. Supersedes AGENT-BRIEF §8-B/C/D, which described these
 as three separate side businesses. They are one product.*
+
+*The 2026-08-13 pass touches §3.3, §7 and §8 only, and all three for the same
+reason: OpenClaw's Gateway became the session bus (`ORCHESTRATOR.md` §3a), which
+puts a second always-on daemon and a Node version floor on the box.*
 
 ---
 
 ## 1. The product
 
 $249 glasses plus a subscription for an always-on Mac mini of ours running the
-user's agent sessions — Claude Code, OpenClaw, Hermes, Codex, OpenCode — with a
-full browser and toolchain.
+user's agent sessions — Claude Code, OpenClaw, Hermes, Codex, OpenCode, and
+through OpenClaw's Gateway the dozen-odd harnesses we would never have written
+an adapter for — with a full browser and toolchain.
 
 Four things the glasses do:
 
@@ -121,6 +126,7 @@ Not a bare VPS. It is a browser-automation and development host:
 - **Chrome/Chromium headless** plus a display server for anything that needs one
 - Full toolchain: git, node, python, ripgrep, build tools
 - The agent runtimes themselves: Claude Code, OpenClaw, Hermes, Codex, OpenCode
+- **The OpenClaw Gateway, as a second always-on daemon** — see below
 - Persistent home directory — the agent's working state and the user's memory
 - Per-user isolation (container or VM), because agents execute arbitrary code
 
@@ -128,6 +134,34 @@ Sizing: agents plus Chrome want **8–16 GB RAM**; Chrome alone takes 1–2 GB u
 load. The boxes are **Mac minis we own**, one per customer, which is what makes
 "close your laptop and it keeps going" true today. Linux is the likely move once
 customer count makes single-tenant hardware uneconomic — see `CLOUD.md` §5.
+
+**The box now runs two daemons, decided 2026-08-13** (`ORCHESTRATOR.md` §3a).
+relayd is still one static binary with nothing to install, and that is the
+`curl | sh` promise; the Gateway is a Node process that OpenClaw's own installer
+registers with launchd or systemd. Four consequences land on this section rather
+than on the orchestrator's, because they are properties of the machine:
+
+- **`node` becomes a box requirement**, inside a narrow range —
+  `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0`. A stock machine plausibly fails
+  it: this one's default `v25.8.0` satisfies none of the three, so the version
+  has to be a checked fact and not an assumption. It is also why the bus is
+  opt-in and why a box that declines it still works.
+- **Two supervisors, one box, no ordering between them.** Both units are
+  start-at-boot with restart-on-exit and neither waits for the other, so relayd
+  must treat "the Gateway is not answering yet" as an ordinary state with
+  backoff, not an error at startup — and the handshake must not sit in front of
+  the listener, or a reboot means a minute where the glasses cannot reach the box
+  *and* the health page that would explain it is behind the same listener.
+- **Whoever owns the Gateway process owns it exclusively.** OpenClaw resolves
+  the daemon's node binary, bakes a PATH into a 0600 env file, and moves the
+  entrypoint on upgrade; two supervisors on one port is a crash loop. So Relay
+  owns the *contract* — registered, loaded, live, ready, at the pinned version —
+  and never runs `gateway run` itself.
+- **A LaunchAgent needs a logged-in GUI session.** An always-on headless Mac
+  mini therefore needs auto-login, or both daemons look correctly installed to
+  every check that reads the filesystem and neither is running. This is the
+  macOS twin of the systemd lingering trap, and it applies to the machine this
+  product is actually installed on.
 
 ### 3.4 Model access
 
@@ -428,9 +462,21 @@ Architectural implications:
 | **Does `0x0A02` expose mic bitrate or format?** | decides whether a low-rate wake stream can share the ~3 KB/s channel with the reply (§5.2b) | one capture with the uplink open; inspect the control payload |
 | **Battery while streaming the mic unplugged** | sets the hands-free threshold in §5.2b; distinct from local recording, since this adds the BLE radio | measure on hardware, plugged vs unplugged |
 | **iOS background survival** | if the app is killed, capture silently stops | prototype against Mentra's approved patterns |
-| **Headless OAuth for BYO subscriptions** | onboarding friction on every single user | prototype the login flow early |
+| ~~**Headless OAuth for BYO subscriptions**~~ | onboarding friction on every single user | **largely answered, 2026-08-13** — see below |
 
 The first two need hardware, which is in Quebec. Everything else can start now.
+
+**On headless OAuth, which was the oldest row here.** Three of the four paths
+are now walked rather than described. Codex/ChatGPT is a device-pairing flow
+plus a browser fallback that Relay performs itself (`ORCHESTRATOR.md` §2b).
+Claude Code reuses the machine's own login and needs no key: onboarding the
+Gateway with `--auth-choice anthropic-cli` produced a working Claude Code turn
+with no credential supplied at any point. Everything else is an API key, which
+was never the hard case. What is left of the row is narrower and worth keeping
+open under its own name: **the first login still needs a browser somewhere**,
+and on a Mac mini bought to sit in a cupboard that browser is on the user's
+laptop or phone. That is a product question about the setup flow, not an
+unknown about the protocols.
 
 ---
 
@@ -439,13 +485,23 @@ The first two need hardware, which is in Quebec. Everything else can start now.
 1. ~~**Protocol codec**~~ — done: `glasses/protocol/`, 92 tests
 2. **Transport** — bleak client, request/response matching on sequence number,
    heartbeat `0x0007`, capability gating on `0x0005`. Buildable against a mock.
-3. **Box image** — Linux + Chrome + toolchain + agent runtimes, reproducible
+3. **Box image** — Linux + Chrome + toolchain + agent runtimes, reproducible.
+   **Now also a conforming Node and the OpenClaw Gateway at its pin** (§3.3),
+   registered on boot, with `GET /health` as the readiness signal. The image is
+   the right place to solve the Node range, because it is the one place the
+   version is ours to choose rather than to discover.
 4. **Phone bridge** — the long pole; start it as soon as transport works
 5. **Capture pipeline** — transcribe → episode → extract → memory
 6. **Recall + proactive surface** — the part users will actually describe to friends
 7. **Connector suggestions** — needs capture data to be useful, so it comes last
 
 Steps 2 and 3 are independent and can run in parallel.
+
+*What step 3 no longer has to carry:* the box image does not need a bespoke
+session-registry service, per-runtime process supervision, or a way to reach the
+harnesses Relay never wrote an adapter for. That is the Gateway's job now
+(`ORCHESTRATOR.md` §6). What it gains instead is a version floor and a second
+unit to keep alive, which is a smaller and much more ordinary problem.
 
 ---
 

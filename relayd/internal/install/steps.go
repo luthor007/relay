@@ -3,7 +3,10 @@ package install
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/luthor007/relay/relayd/internal/config"
 	"github.com/luthor007/relay/relayd/internal/detect"
@@ -22,7 +25,7 @@ import (
 // RunVoice re-runs the voice step and saves the result.
 func RunVoice(ctx context.Context, opts Options) (VoiceOutcome, error) {
 	opts = opts.withDefaults()
-	v, err := chooseVoice(ctx, opts)
+	v, err := verifyVoice(ctx, opts)
 	if err != nil {
 		return v, err
 	}
@@ -142,6 +145,8 @@ func RunMCP(ctx context.Context, opts Options) (MCPOutcome, error) {
 // — because the failure this prevents (a key that stopped working, discovered
 // as silence at the glasses) does not only happen at install time.
 type Doctor struct {
+	// Bus is the Gateway, when one is configured.
+	Bus   BusHealth
 	Voice []voice.Check
 	Small llm.ProbeResult
 	Big   llm.ProbeResult
@@ -190,13 +195,95 @@ func (d Doctor) OK() bool {
 			speaks = true
 		}
 	}
-	return speaks && d.SmallProbed && d.Small.OK() && d.BigProbed && d.Big.OK() && d.EmbedOK()
+	return speaks && d.SmallProbed && d.Small.OK() && d.BigProbed && d.Big.OK() &&
+		d.EmbedOK() && d.Bus.OK()
+}
+
+// BusHealth is what `relay doctor` can say about the Gateway without a token:
+// whether something is listening and calling itself live.
+//
+// It is deliberately the unauthenticated /health endpoint rather than a socket
+// handshake. Doctor's job is to tell you which subsystem is the problem, and
+// "the port answers but the token is wrong" is a different sentence from "there
+// is nothing there" — collapsing them into one failed handshake would lose the
+// half that says where to look.
+type BusHealth struct {
+	Configured bool
+	URL        string
+	Live       bool
+	Detail     string
+}
+
+// Line is the doctor row.
+func (b BusHealth) Line() string {
+	switch {
+	case !b.Configured:
+		return "not configured — relayd drives Claude Code and Codex directly"
+	case b.Live:
+		return b.URL + " — live"
+	case b.Detail != "":
+		return b.URL + " — " + b.Detail
+	}
+	return b.URL + " — not answering"
+}
+
+// OK reports whether the bus is fine. An unconfigured bus is fine.
+func (b BusHealth) OK() bool { return !b.Configured || b.Live }
+
+// checkBus asks the Gateway's health endpoint whether it is up.
+func checkBus(ctx context.Context, opts Options) BusHealth {
+	var h BusHealth
+	raw := strings.TrimSpace(opts.Config.Bus.URL)
+	if raw == "" {
+		return h
+	}
+	h.Configured, h.URL = true, raw
+
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		h.Detail = "not a url"
+		return h
+	}
+	// The socket is ws://; health is http:// on the same host.
+	scheme := "http"
+	if u.Scheme == "wss" || u.Scheme == "https" {
+		scheme = "https"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, scheme+"://"+u.Host+"/health", nil)
+	if err != nil {
+		h.Detail = err.Error()
+		return h
+	}
+	// Options.HTTPClient is nil on the paths that never make a provider call —
+	// `relay doctor` builds its own Options and leaves it unset — and a nil
+	// *http.Client panics rather than erroring. Every other caller in this
+	// package happens to be handed one, which is why this was not already true.
+	client := opts.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		h.Detail = "not answering"
+		return h
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		h.Detail = fmt.Sprintf("answered %d", resp.StatusCode)
+		return h
+	}
+	h.Live = true
+	return h
 }
 
 // RunDoctor probes everything in a config.
 func RunDoctor(ctx context.Context, opts Options) Doctor {
 	opts = opts.withDefaults()
 	var d Doctor
+
+	d.Bus = checkBus(ctx, opts)
 
 	v := opts.Config.Voice
 	primary := voice.Config{
@@ -273,6 +360,7 @@ func (d Doctor) Print(p Prompter) {
 	for _, c := range d.Voice {
 		p.Say("  %s", c.String())
 	}
+	p.Say("  bus    %s", d.Bus.Line())
 	for _, m := range []struct {
 		role   string
 		res    llm.ProbeResult

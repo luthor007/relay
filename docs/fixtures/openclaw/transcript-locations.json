@@ -1,0 +1,58 @@
+{
+  "capturedAt": "2026-08-13T20:02:24.171Z",
+  "openclawVersion": "2026.7.1-2",
+  "claudeCodeVersion": "2.1.231",
+  "profile": "relay-probe",
+  "agentWorkspace": "/Users/USER/.openclaw/workspace-relay-probe",
+  "openclawSessionStore": "/Users/USER/.openclaw-relay-probe/agents/main/sessions/",
+  "openclawSessionIndex": "/Users/USER/.openclaw-relay-probe/agents/main/sessions/sessions.json",
+  "claudeCodeProjectDir": "/Users/USER/.claude/projects/-Users-USER--openclaw-workspace-relay-probe/",
+  "claudeCodeProjectDirDerivedFrom": "the OpenClaw agent workspace dir, not the repo under work",
+  "linkField": "sessions.json[<sessionKey>].claudeCliSessionId (also cliSessionIds['claude-cli'])",
+  "sessions": [
+    {
+      "sessionKey": "agent:main:dashboard:43be72cb-b4ab-41ef-9073-664c51bc1278",
+      "label": "probe-cc",
+      "openclawSessionId": "4763e093-3599-4509-a686-b7ade1cf5f0d",
+      "openclawTranscript": "/Users/USER/.openclaw-relay-probe/agents/main/sessions/4763e093-3599-4509-a686-b7ade1cf5f0d.jsonl",
+      "modelProvider": "claude-cli",
+      "model": "claude-opus-4-8",
+      "claudeCliSessionId": "d0a97f6c-ecf4-47bb-a469-d02d24ba125c",
+      "claudeCodeTranscript": "/Users/USER/.claude/projects/-Users-USER--openclaw-workspace-relay-probe/d0a97f6c-ecf4-47bb-a469-d02d24ba125c.jsonl",
+      "claudeCodeTranscriptExists": true
+    },
+    {
+      "sessionKey": "agent:main:dashboard:b11a8ddc-5728-4c82-8fd6-3d26b63b8e8e",
+      "label": "probe-ask",
+      "openclawSessionId": "f4e047ed-c084-4b29-9550-07fa19c621c4",
+      "openclawTranscript": "/Users/USER/.openclaw-relay-probe/agents/main/sessions/f4e047ed-c084-4b29-9550-07fa19c621c4.jsonl",
+      "modelProvider": "claude-cli",
+      "model": "claude-opus-4-8",
+      "claudeCliSessionId": "39345ce1-09c0-47ea-9d85-f336f6a69034",
+      "claudeCodeTranscript": "/Users/USER/.claude/projects/-Users-USER--openclaw-workspace-relay-probe/39345ce1-09c0-47ea-9d85-f336f6a69034.jsonl",
+      "claudeCodeTranscriptExists": true
+    },
+    {
+      "sessionKey": "agent:main:dashboard:24d6a254-5803-4074-b54d-3abe24e2c807",
+      "label": "probe-gate",
+      "openclawSessionId": "90d73c64-3ab2-42ea-9149-3247a3c56fc2",
+      "openclawTranscript": "/Users/USER/.openclaw-relay-probe/agents/main/sessions/90d73c64-3ab2-42ea-9149-3247a3c56fc2.jsonl",
+      "modelProvider": "claude-cli",
+      "model": "claude-opus-4-8",
+      "claudeCliSessionId": "0287a2b8-3b86-4aae-ad53-39048cd354cd",
+      "claudeCodeTranscript": "/Users/USER/.claude/projects/-Users-USER--openclaw-workspace-relay-probe/0287a2b8-3b86-4aae-ad53-39048cd354cd.jsonl",
+      "claudeCodeTranscriptExists": true
+    },
+    {
+      "sessionKey": "agent:main:dashboard:5ed78bd9-8fda-40cf-9849-511194b36f0d",
+      "label": "probe-cwd",
+      "openclawSessionId": "9eb00592-4204-440c-99b7-a35e2ae7c369",
+      "openclawTranscript": "/Users/USER/.openclaw-relay-probe/agents/main/sessions/9eb00592-4204-440c-99b7-a35e2ae7c369.jsonl",
+      "modelProvider": "claude-cli",
+      "model": "claude-opus-4-8",
+      "claudeCliSessionId": "4bad9a44-9af2-4b85-8c23-5aa030ebd820",
+      "claudeCodeTranscript": "/Users/USER/.claude/projects/-Users-USER--openclaw-workspace-relay-probe/4bad9a44-9af2-4b85-8c23-5aa030ebd820.jsonl",
+      "claudeCodeTranscriptExists": true
+    }
+  ]
+}

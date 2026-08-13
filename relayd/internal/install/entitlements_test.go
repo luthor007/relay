@@ -134,7 +134,7 @@ func TestARecordedEntitlementReachesTheWrittenConfig(t *testing.T) {
 // MEMORY.md §8: "an entitlement is declared, never inferred."
 //
 // The installer knows more than it is allowed to act on. A user who picks the
-// Codex row — labelled "OpenAI Codex (ChatGPT OAuth)" — for the orchestrator's
+// Codex row — labelled "ChatGPT Login" — for the orchestrator's
 // big model almost certainly holds a ChatGPT plan, and promoting that into an
 // entitlement would be one line. It is forbidden, and the cost of being wrong
 // is asymmetric: an entitlement overrides capability comparison, so a guessed
@@ -147,14 +147,11 @@ func TestASubscriptionAuthChoiceIsQuotedAndNeverPromoted(t *testing.T) {
 	// Codex's ChatGPT OAuth for the big model — an AuthSubscription row.
 	answers["models.big.vendor"] = "openai"
 	answers["models.big.auth"] = "openai-codex"
-	answers["models.big.login"] = "yes"
 	answers["models.big.model"] = ""
-	answers["models.big.cred.kind"] = "env"
-	answers["models.big.cred.env"] = "OPENAI_API_KEY"
+	answers["models.big.chatgpt.how"] = "cli"
 	delete(answers, "models.big.reuse")
 
-	opts, script, _ := newOpts(t, answers, nil)
-	t.Setenv("OPENAI_API_KEY", "sk-openai-abcdefgh")
+	opts, script, _ := newOpts(t, answers, withCodexLogin(t))
 	res, err := Run(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, script.Output())
@@ -165,7 +162,7 @@ func TestASubscriptionAuthChoiceIsQuotedAndNeverPromoted(t *testing.T) {
 			"entitlement, and a wrong one routes real work", got)
 	}
 	out := script.Output()
-	if !strings.Contains(out, "ChatGPT OAuth") {
+	if !strings.Contains(out, "ChatGPT Login") {
 		t.Errorf("the installer did not quote the subscription the user just chose:\n%s", out)
 	}
 	if !strings.Contains(out, "nothing below has been answered for you") {

@@ -158,11 +158,9 @@ func reconcileMCP(ctx context.Context, opts Options, rep detect.Report) (MCPOutc
 	}
 
 	accepted, err := p.Confirm(Confirm{
-		ID:     "mcp.adopt",
-		Prompt: "Manage them in one place?",
-		Body: "One registry, five runtimes: grant a tool once and every agent gets it, revoke " +
-			"once and it is gone everywhere, and every call goes through one audit trail. " +
-			"Your existing configs are kept so this is reversible.",
+		ID:      "mcp.adopt",
+		Prompt:  "Manage them in one place?",
+		Body:    "Grant once, every agent gets it. Your configs are kept.",
 		Default: true,
 	})
 	if err != nil {
@@ -293,16 +291,51 @@ func adopt(opts Options, rep detect.Report, inv detect.MCPInventory) (adoptResul
 	return res, nil
 }
 
-// mcpKeyFor is the config key each runtime keeps its servers under.
+// mcpKeyFor is the config key each runtime keeps its servers under. A key with
+// a dot in it is a path into nested tables.
+//
+// OpenClaw is the one that nests: it reads mcp.servers (src/config/mcp-config.ts
+// reads sourceConfig.mcp?.servers), and its root schema is a strict object. So a
+// top-level mcpServers is not merely ignored — it makes the whole config
+// invalid. Measured against the installed 2026.7.1-2: writing that key and
+// running `openclaw mcp list` prints `OpenClaw config is invalid / <root>:
+// Unrecognized key: "mcpServers"`, and every config-reading command refuses
+// until it is removed. Adoption would have taken a working bus and stopped it.
 func mcpKeyFor(rt adapter.Runtime) (key, format string) {
 	switch rt {
 	case adapter.Codex:
 		return "mcp_servers", "toml"
 	case adapter.OpenCode:
 		return "mcp", "json"
+	case adapter.OpenClaw:
+		return "mcp.servers", "json"
 	default:
 		return "mcpServers", "json"
 	}
+}
+
+// setServers writes the server map at a dotted key, creating the tables above it
+// and leaving everything else inside them alone: OpenClaw keeps the rest of its
+// mcp table beside mcp.servers, and a surgical edit stays surgical at depth.
+func setServers(doc map[string]any, key string, servers map[string]any) error {
+	parts := strings.Split(key, ".")
+	cur := doc
+	for i, p := range parts[:len(parts)-1] {
+		next, ok := cur[p].(map[string]any)
+		if !ok {
+			if raw, present := cur[p]; present && raw != nil {
+				// Refusing beats clobbering. The caller turns this into a warning
+				// and leaves the file exactly as it found it.
+				return fmt.Errorf("%s is not a table, so there is nowhere to write %s",
+					strings.Join(parts[:i+1], "."), key)
+			}
+			next = map[string]any{}
+			cur[p] = next
+		}
+		cur = next
+	}
+	cur[parts[len(parts)-1]] = servers
+	return nil
 }
 
 // pointAtGateway replaces a runtime's server list with the single Relay entry,
@@ -320,7 +353,9 @@ func pointAtGateway(rt adapter.Runtime, original []byte, g MCPGateway) ([]byte, 
 		if doc == nil {
 			doc = map[string]any{}
 		}
-		doc[key] = map[string]any{g.Name: entry}
+		if err := setServers(doc, key, map[string]any{g.Name: entry}); err != nil {
+			return nil, err
+		}
 		var buf bytes.Buffer
 		if err := toml.NewEncoder(&buf).Encode(doc); err != nil {
 			return nil, err
@@ -335,7 +370,9 @@ func pointAtGateway(rt adapter.Runtime, original []byte, g MCPGateway) ([]byte, 
 	if doc == nil {
 		doc = map[string]any{}
 	}
-	doc[key] = map[string]any{g.Name: entry}
+	if err := setServers(doc, key, map[string]any{g.Name: entry}); err != nil {
+		return nil, err
+	}
 	return json.MarshalIndent(doc, "", "  ")
 }
 

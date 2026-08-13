@@ -131,6 +131,114 @@ func TestAdoptionPreservesUnrelatedSettings(t *testing.T) {
 	}
 }
 
+// OpenClaw reads mcp.servers, nested. Writing a top-level mcpServers there does
+// not quietly miss: its root schema is strict, so the key invalidates the whole
+// config and every config-reading openclaw command refuses until it is removed.
+// Measured on the installed 2026.7.1-2 — `openclaw mcp list` answered
+// `<root>: Unrecognized key: "mcpServers"`. Adoption would have stopped the bus.
+func TestOpenClawGatewayIsNestedUnderMCP(t *testing.T) {
+	original := []byte(`{
+		"gateway": {"port": 18789},
+		"mcp": {"servers": {"gh": {"command": "gh-mcp"}}}
+	}`)
+	out, err := pointAtGateway(adapter.OpenClaw, original,
+		MCPGateway{Name: "relay", Command: "relayd", Args: []string{"mcp"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, stray := doc["mcpServers"]; stray {
+		t.Errorf("a top-level mcpServers invalidates OpenClaw's whole config:\n%s", out)
+	}
+	mcp, ok := doc["mcp"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp table missing:\n%s", out)
+	}
+	servers, ok := mcp["servers"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp.servers missing:\n%s", out)
+	}
+	if len(servers) != 1 {
+		t.Fatalf("servers = %v, want just relay", servers)
+	}
+	if _, ok := servers["relay"]; !ok {
+		t.Errorf("servers = %v, want just relay", servers)
+	}
+	if gw, _ := doc["gateway"].(map[string]any); gw == nil || gw["port"] == nil {
+		t.Errorf("an unrelated table was lost:\n%s", out)
+	}
+}
+
+// The nesting is created when it is absent, and the rest of the table it lands
+// in is left alone when it is present.
+func TestNestedWriteCreatesAndPreserves(t *testing.T) {
+	g := MCPGateway{Name: "relay", Command: "relayd"}
+
+	out, err := pointAtGateway(adapter.OpenClaw, []byte(`{"gateway":{"port":18789}}`), g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var made map[string]any
+	if err := json.Unmarshal(out, &made); err != nil {
+		t.Fatal(err)
+	}
+	mcp, _ := made["mcp"].(map[string]any)
+	if mcp == nil || mcp["servers"] == nil {
+		t.Fatalf("mcp.servers was not created:\n%s", out)
+	}
+
+	out, err = pointAtGateway(adapter.OpenClaw,
+		[]byte(`{"mcp":{"apps":{"enabled":true},"servers":{"gh":{"command":"gh-mcp"}}}}`), g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept map[string]any
+	if err := json.Unmarshal(out, &kept); err != nil {
+		t.Fatal(err)
+	}
+	mcp, _ = kept["mcp"].(map[string]any)
+	if mcp == nil || mcp["apps"] == nil {
+		t.Errorf("a sibling of mcp.servers was eaten:\n%s", out)
+	}
+}
+
+// Where the path is blocked by something that is not a table, refusing beats
+// clobbering: adopt() turns the error into a warning and the file is left as it
+// was found, which is the difference between a warning and lost configuration.
+func TestNestedWriteRefusesToClobber(t *testing.T) {
+	_, err := pointAtGateway(adapter.OpenClaw, []byte(`{"mcp":"off"}`),
+		MCPGateway{Name: "relay", Command: "relayd"})
+	if err == nil {
+		t.Fatal("writing through a non-table must fail rather than overwrite it")
+	}
+	if !strings.Contains(err.Error(), "mcp") {
+		t.Errorf("err = %v; it has to name what is in the way", err)
+	}
+}
+
+// The other four runtimes keep flat keys, and they are correct as they are.
+func TestMCPKeysPerRuntime(t *testing.T) {
+	for _, tc := range []struct {
+		rt     adapter.Runtime
+		key    string
+		format string
+	}{
+		{adapter.ClaudeCode, "mcpServers", "json"},
+		{adapter.Codex, "mcp_servers", "toml"},
+		{adapter.OpenCode, "mcp", "json"},
+		{adapter.Hermes, "mcpServers", "json"},
+		{adapter.OpenClaw, "mcp.servers", "json"},
+	} {
+		key, format := mcpKeyFor(tc.rt)
+		if key != tc.key || format != tc.format {
+			t.Errorf("%s -> %q/%q, want %q/%q", tc.rt, key, format, tc.key, tc.format)
+		}
+	}
+}
+
 // OpenCode's shape is different — the whole argv is the command — and adopting
 // has to speak each runtime's own vocabulary.
 func TestGatewayEntrySpeaksEachRuntimesVocabulary(t *testing.T) {

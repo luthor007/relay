@@ -86,10 +86,8 @@ func entitlementQuestions() []entitlementQuestion {
 			id:          "entitlements.claude",
 			entitlement: "claude-subscription",
 			prompt:      "Do you pay for Claude Max or Claude Pro?",
-			body: "If you do, Claude-model work should go to Claude Code — that is the only " +
-				"client that plan works in, and running the same work through an API key " +
-				"bills you twice for it.",
-			runtimes: []adapter.Runtime{adapter.ClaudeCode},
+			body:        "Claude-model work then goes to Claude Code; an API key would bill you twice.",
+			runtimes:    []adapter.Runtime{adapter.ClaudeCode},
 		},
 		{
 			id:          "entitlements.chatgpt",
@@ -122,22 +120,17 @@ func codingPlanChoices() []Choice {
 		{ID: "minimax-coding-plan", Label: "MiniMax coding plan"},
 		{ID: "qwen-coding-plan", Label: "Qwen coding plan"},
 		{ID: "kimi-coding-plan", Label: "Kimi coding plan",
-			Hint: "no runtime has been probed for this one, so Relay will not spend it on a guess"},
+			Hint: "unprobed; Relay will not spend it on a guess"},
 	}
 }
 
-const entitlementsPreamble = `Relay routes work to whichever agent runtime it should, and the ` +
-	`sharpest input is what you already pay for. A Claude Max plan makes Claude Code free at ` +
-	`the margin; the same work through an API key is a bill you did not expect.
+// The three sentences that survived the cut are the three the test pins: what
+// this decides, what it does not do, and that nothing is inferred. The rest was
+// the reasoning behind a default of no, which the default already expresses.
+const entitlementsPreamble = `This decides where Relay sends work. It does not give Relay ` +
+	`your subscription, and your Claude plan still only works inside Claude Code.
 
-Relay will not guess this. A runtime being installed says nothing about which subscription ` +
-	`is behind it, and guessing wrong is the exact failure this step exists to prevent. So it ` +
-	`asks, the default to every question is no, and nothing here is checked against a provider.
-
-To be clear about what this is not: it does not give Relay your subscription, and it does ` +
-	`not change where a plan works. Your Claude plan still only works inside Claude Code. ` +
-	`This decides where Relay sends work, nothing else, and you can change it later with ` +
-	"`relay entitlements`."
+Relay will not guess this, so every answer below defaults to no.`
 
 // chooseEntitlements asks what the user pays for, and records only that.
 func chooseEntitlements(
@@ -197,10 +190,9 @@ func chooseEntitlements(
 	if askPlans {
 		out.Asked = append(out.Asked, "entitlements.coding_plan")
 		yes, err := p.Confirm(Confirm{
-			ID:     "entitlements.coding_plan",
-			Prompt: "Do you pay for a coding plan (Z.AI, MiniMax, Qwen, Kimi)?",
-			Body: "These front many models through one subscription, and OpenClaw, OpenCode " +
-				"and Hermes can each sign in to some of them.",
+			ID:      "entitlements.coding_plan",
+			Prompt:  "Do you pay for a coding plan (Z.AI, MiniMax, Qwen, Kimi)?",
+			Body:    "One subscription, many models.",
 			Default: false,
 		})
 		if err != nil {
@@ -211,7 +203,7 @@ func chooseEntitlements(
 			which, err := p.Select(Question{
 				ID:      "entitlements.coding_plan.which",
 				Title:   "Which plan?",
-				Body:    "One of the four MEMORY.md §8 names. Run this step again to add another.",
+				Body:    "Run this step again to add another.",
 				Choices: codingPlanChoices(),
 				Default: "zai-coding-plan",
 			})

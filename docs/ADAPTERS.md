@@ -1,23 +1,36 @@
-# Agent adapters — how the orchestrator drives five runtimes
+# Agent adapters — how the orchestrator drives its runtimes
 
 *Answers `SYSTEM.md` §9 hard problem #1. Every claim below was probed against
 installed binaries on 2026-08-09, not inferred from documentation.*
 
+**Read `ORCHESTRATOR.md` §3a first if you have not.** On 2026-08-13 OpenClaw's
+Gateway became the session bus, which adds a fourth transport to this document
+and moves one runtime onto it. Sections 2, 3 and 4 are unchanged as protocol
+descriptions — they were probed and they are still true — but §4's *reasoning*
+about which OpenClaw path to take was reversed by measurement, and §4b is the
+new one. Nothing here is deleted, because the direct adapters are the privileged
+path for anything that writes or executes and that is now a decision rather than
+an accident.
+
 | Runtime | Version probed |
 |---|---|
-| Claude Code | 2.1.226 |
-| OpenClaw | 2026.3.13 (61d171a) |
+| Claude Code | 2.1.226 (2.1.231 under the Gateway, §4b) |
+| OpenClaw | 2026.3.13 (61d171a) for the ACP bridge; **2026.7.1-2** for the Gateway |
 | Codex | codex-cli 0.140.0 |
 | Hermes Agent | v0.16.0 (2026.6.5) |
 | OpenCode | 1.18.15 |
 
 Two protocol contracts are vendored rather than probed, because they are
-published as machine-readable schemas and a diff is worth more than a probe:
+published as machine-readable schemas and a diff is worth more than a probe. The
+third is neither: the Gateway publishes no schema at the version anyone can
+install, so it is pinned by recorded frames instead, which is a weaker artifact
+and is labelled as one.
 
 | Contract | Version vendored | Where | Verified |
 |---|---|---|---|
 | Codex app-server | codex-cli 0.140.0 | `docs/fixtures/adapters/{ClientRequest,ServerNotification,ServerRequest}.json` | 2026-08-09 |
 | **Agent Client Protocol** | **`@zed-industries/agent-client-protocol` 0.4.5** — also npm `latest` when vendored | `docs/fixtures/adapters/acp-schema.json`, indexed by `acp-methods.md` | 2026-08-10 |
+| **OpenClaw Gateway** | **openclaw `2026.7.1-2`**, wire `PROTOCOL_VERSION 4` — recorded frames, *not* a schema | `docs/fixtures/openclaw/*.jsonl`, indexed by its own `README.md` | 2026-08-13 |
 
 ACP's wire protocol version is a separate integer from the package version:
 `PROTOCOL_VERSION = 1`, bumped only for breaking changes.
@@ -30,30 +43,53 @@ been building against for a while, and that pinning costs us nothing today.
 
 ---
 
-## 1. The headline: three protocols, not five, and no scraping
+## 1. The headline: four protocols, not five, and no scraping
 
 §9 assumed "five unstable output formats" and budgeted for recorded fixtures per
 runtime against CLI text. **That was wrong, and wrong in our favour.** Every
-installed runtime exposes a structured, bidirectional protocol over stdio:
+installed runtime exposes a structured, bidirectional protocol — three over
+stdio, and one, added 2026-08-13, over a WebSocket:
 
 | Runtime | Protocol | Why this one |
 |---|---|---|
 | Claude Code | `stream-json` over stdin/stdout | only structured option; `--input-format stream-json` is the one that accepts a live turn |
 | Codex | **app-server** JSON-RPC | `codex exec --json` also exists but is one-shot; app-server is the only path with steering and approvals |
-| OpenClaw | **ACP** via `openclaw acp` | bridges the Gateway; a standard protocol beats the Gateway's own WS RPC |
-| Hermes | **ACP** via `hermes acp` | same protocol as OpenClaw, so one adapter covers all three |
+| OpenClaw | **Gateway WS RPC** — §4b | ~~a standard protocol beats the Gateway's own WS RPC~~ — reversed by measurement on 2026-08-13; see below |
+| Hermes | **ACP** via `hermes acp` | native ACP mode, and it is not an OpenClaw harness, so this adapter exists for it regardless |
 | OpenCode | **ACP** via `opencode acp` | confirmed; also ships `opencode serve`, a headless HTTP server, if ACP proves limiting |
 
-So the adapter layer is **three adapters**, and OpenClaw, Hermes and OpenCode
-share one.
+So the adapter layer is **four adapters**: `stream-json`, app-server, ACP for
+Hermes and OpenCode, and the Gateway.
 Nobody parses terminal output. The §9 mitigation ("a format change breaks CI, not
-a user") still applies, but to three JSON schemas rather than five text formats.
+a user") still applies, but to three JSON schemas and one set of recorded frames
+rather than five text formats.
+
+**Why the OpenClaw row flipped, stated plainly because it was an argued
+position.** The original reasoning was sound and the facts under it were not
+checked: a published standard *should* beat a vendor's own WS RPC. What the
+probe found is that on the installed `2026.7.1-2` the ACP path does not run at
+all — `/acp doctor` answers `configuredBackend: acpx, registeredBackend: (none),
+healthy: no, ACP_BACKEND_MISSING`, because acpx is a separately-installed plugin
+on its own release clock. Meanwhile the Gateway's own socket spawned and drove a
+real Claude Code turn from a plain external WebSocket client on the first
+attempt. One path was measured working and the other was measured missing. That
+is not a preference any more.
+
+Two things follow that are worth keeping in view. `openclaw acp` is itself
+documented by its own `--help` as "run an ACP bridge **backed by the Gateway**",
+so the ACP route never avoided the Gateway — it added a process in front of it.
+And the Gateway is the half of OpenClaw's surface with **no published schema at
+an installable version**, so §8's version-drift discipline applies here harder
+than anywhere else in this document, not less.
 
 **Revise §9 accordingly** — this is no longer the highest-risk item. The riskiest
-part is now that two of the three protocols are explicitly experimental: Codex
-labels app-server `[experimental]`, and ACP is young. Version-pin, and keep a
-`codex exec --json` one-shot fallback for the case where app-server changes
-shape under us.
+part is now that three of the four protocols carry no stability promise: Codex
+labels app-server `[experimental]`, ACP is young, and the Gateway publishes no
+schema at all at the version anyone can install (§8 item 16). Version-pin all
+three, keep a `codex exec --json` one-shot fallback for the case where
+app-server changes shape under us, and keep the direct `stream-json` path —
+which is the one protocol here with none of those problems — as the path that
+does the consequential work.
 
 ---
 
@@ -524,16 +560,24 @@ as a hedge.)
 
 ---
 
-## 4. OpenClaw, Hermes and OpenCode — one ACP adapter
+## 4. Hermes and OpenCode — one ACP adapter
+
+*This section was written when it covered OpenClaw too, and the protocol
+description below is unchanged and still correct for all three. What changed on
+2026-08-13 is which of them Relay drives this way: OpenClaw moved to §4b, and
+the ACP adapter's remaining job is **Hermes and OpenCode**. Hermes is not an
+OpenClaw harness at all — the upstream `migrate-hermes` extension is a one-way
+config importer — and Hermes is roughly 70% of the measured historical corpus,
+so this adapter survives the migration regardless of how far the bus spreads.*
 
 ```bash
-openclaw acp --session agent:main:main   # bridges the OpenClaw Gateway
 hermes acp                                # native ACP mode
 opencode acp                              # native ACP mode
+openclaw acp --session agent:main:main    # the bridge — superseded, see §4b
 ```
 
-All three speak the Agent Client Protocol, so **one adapter serves three of the
-five runtimes**. ACP's
+All three speak the Agent Client Protocol, so **one adapter serves three
+runtimes**, of which Relay now uses two. ACP's
 model maps cleanly onto everything above: `session/new` and `session/load`,
 `session/prompt` to send a turn, `session/update` notifications for streaming
 progress, `session/request_permission` for needs-input, and `session/cancel`.
@@ -549,7 +593,10 @@ Two runtime-specific notes:
 - **OpenClaw's ACP is a bridge, not the source of truth.** It sits in front of
   the Gateway, and session keys look like `agent:main:main`. `--require-existing`
   makes a missing session fail loudly instead of silently creating one, which is
-  what we want when routing to a session the registry believes exists.
+  what we want when routing to a session the registry believes exists. *That
+  sentence is the tell, read in hindsight: a bridge in front of the source of
+  truth is a hop, and §4b removes it. It also cannot run at all until the acpx
+  plugin is installed, which on the probed box it was not.*
 - **Hermes keeps sessions in SQLite** (`hermes sessions list|export`), so the
   registry can be reconciled against the runtime's own store after a crash
   rather than rebuilt from memory.
@@ -677,11 +724,15 @@ after it are dropped from the next prompt**. The adapter must not treat a refuse
 turn as merely failed and retry on top of it — that context is gone, and the
 re-prompt has to carry the instruction again.
 
-### `session/request_permission` — the needs-input path for three runtimes
+### `session/request_permission` — the needs-input path for the ACP runtimes
 
 A **request**, not a notification, so the agent blocks until we answer, for as
 long as we take. That is what makes §7's voice-answerable approval real on
-OpenClaw, Hermes and OpenCode rather than aspirational.
+Hermes and OpenCode rather than aspirational — and, read next to §4b, it is
+worth noticing that this well-shaped little contract is exactly what the
+Gateway's `claude-cli` path does not have. A blocking request with a set of
+options is all an approval needs to be. The bus's version of the same moment is
+a boolean decided before the session started.
 
 Request carries `sessionId`, a `toolCall`, and `options[]`:
 
@@ -718,9 +769,140 @@ stop" spoken at the glasses maps to `reject_*` **plus** a `session/cancel`.
 
 ---
 
+## 4b. OpenClaw's Gateway — the fourth transport, verified live 2026-08-13
+
+Probed against the **installed** `openclaw 2026.7.1-2`, not the 2026.8.1 source
+clone, because the installed one is what a user gets. Every frame below is in
+`docs/fixtures/openclaw/`, captured by a plain WebSocket client with no
+`openclaw` process in the loop — so these are the bytes relayd will see.
+
+### The shape
+
+One authenticated WebSocket carries **many sessions**, which is the structural
+difference from the other three transports: they are one process per session (or
+per runtime), this is one socket per box. `adapter.Adapter` already permits it —
+"one Adapter may own many Sessions", which `codex/adapter.go` proves with
+`byThread` — so no interface changes.
+
+| Step | Frame | Note |
+|---|---|---|
+| Handshake | server opens with `event: connect.challenge`; client answers `method: "connect"` with `minProtocol/maxProtocol: 4`, a `client{id,version,platform,mode}`, `role: "operator"`, scopes, `caps:["tool-events"]` and `auth.token` | `client.id` and `client.mode` are **closed enums** with no third-party slot. `{id:"cli",mode:"cli"}` was what completed the probe's handshake; `gateway-client`/`backend` is the pairing-exempt identity and is what relayd should send |
+| Observe | `sessions.subscribe`, then `sessions.messages.subscribe {key}` | this is the "one list" payoff; without subscribing, `sessions.list` is fetched by nobody |
+| Start | `sessions.create {model, label}` → `{key:"agent:main:dashboard:<uuid>", sessionId, entry, runStarted}` | also accepts `message` and `worktree`, so create-and-run is one call |
+| Turn | `sessions.send {key, message, timeoutMs}` → `{runId, status:"started", messageSeq}` | `chat.send` is the other door and **requires `idempotencyKey`**; `sessions.send` does not. Easy to get wrong |
+| Stream | `agent` (lifecycle start) → `session.message` (the user row) → `agent` `stream:"assistant"` deltas → `agent` `stream:"tool"` `phase:"start"`/`"result"` → `chat` state delta then final → `agent` (lifecycle end) → `sessions.changed` | one Claude Code turn, ~4.4 s end to end |
+
+**The model ref is how you choose a runtime, and it is config-coupled.**
+`sessions.create` has no `runtime` field and neither does `sessions.patch`;
+onboarding with `--auth-choice anthropic-cli` writes
+`agents.defaults.models["anthropic/claude-opus-4-8"].agentRuntime = {id:"claude-cli"}`
+and the Gateway echoes back `agentRuntime:{id:"claude-cli",source:"model"}`. The
+provider-namespaced spelling is **rejected** — `sessions.create
+{model:"claude-cli/claude-opus-5"}` returns `INVALID_REQUEST: model not
+allowed`, and all five `claude-cli` models report `available:false` in
+`models.list`. So the adapter reads the allowlist (`models.list` default view)
+and the installer guarantees the mapping exists; a hardcoded ref is a bug
+waiting for the next onboarding change.
+
+**Slash commands never reach the harness.** `chat.send` with a leading slash is
+answered by the Gateway itself — `provider:"openclaw"`,
+`model:"gateway-injected"` — consuming no model credential. That settles the
+compaction question for this transport in the direction that hurts:
+`internal/compaction` sends `/compact` through `Send` as ordinary user text, and
+on the bus that would compact OpenClaw's own conversation and report success.
+Compaction must key on `(runtime, transport)`, and the bus entry is either
+`sessions.compact` or an explicit "no documented way to drive this here".
+
+### Frames to normalized events
+
+| §5 event | Gateway frame | Confidence |
+|---|---|---|
+| `TurnStarted` | `agent` lifecycle start / `sessions.send` returning `runId` | recorded |
+| `TextDelta` | `agent` `stream:"assistant"` deltas | recorded |
+| `Reasoning` | not observed in the probe's turns | unmeasured |
+| `ToolStarted` / `ToolOutput` | `agent` `stream:"tool"`, `phase:"start"` then `phase:"result"` | recorded — `{"phase":"start","name":"Bash","args":{"command":…}}` |
+| `PlanUpdated` | none seen | unmeasured |
+| `NeedsInput` | **nothing, for `claude-cli` sessions** | recorded negative — see below |
+| `TurnCompleted` | `agent` lifecycle end, with `chat` final carrying the assistant row | recorded |
+| cost / tokens | `sessions.usage` exists and is callable but is **not advertised** in `hello-ok.features.methods` | unmeasured — it is the open question that replaces §8 item 3's "no OpenClaw equivalent found" |
+
+`hello-ok.features.methods` is **not an enumeration**: `sessions.steer`,
+`sessions.usage`, `sessions.get`, `sessions.resolve` and `push.test` are all real
+and callable while absent from it. A Go client that gates calls on that list will
+refuse to make calls that work.
+
+### The approval answer, which is a split and must not be summarised into one word
+
+**(a) The Gateway's approval bus does reach a separate external client.** Two
+independent sockets: B called `exec.approval.request`; A — a different
+connection — received `exec.approval.requested` carrying the command, cwd,
+`security`, `ask` and `allowedDecisions:["allow-once","deny"]`; A called
+`exec.approval.resolve {id, decision:"allow-once"}`; both saw
+`exec.approval.resolved`, and B's blocked RPC returned the decision. That is
+exactly the shape a phone-shaped approval surface needs, and it works. Two gates
+are silent and both were hit: `suppressDelivery:true` skips the broadcast
+entirely, and a client without `operator.admin` sees only approvals raised on
+its own connection or bound to its own paired device. `decision:"approve"` is
+invalid — the enum is `allow-once` / `deny` / `allow-always` where offered.
+
+**(b) Claude Code sessions never use that bus, and there is no ask in them at
+all.** For the `claude-cli` runtime, exec permission is a binary local gate:
+`permissionMode` resolves to `bypassPermissions` when `security === "full" &&
+ask === "off"` and to `default` otherwise, and the harness's `can_use_tool`
+control request is answered inline, allow-everything or deny-everything.
+Measured both ways. With the **default** policy the session ran `ls` and `pwd`
+with nobody asked and no approval frame anywhere. With `security=allowlist,
+ask=always` the Bash call came back `isError:true, "OpenClaw exec policy denied
+Claude native tool use (security=allowlist, ask=always)"`, the marker file was
+never created, and an `operator.admin` observer on a second socket saw
+`approvalsSeen: 0`. Per-session `sessions.patch {execAsk:"always"}` gave the same
+result.
+
+So for this transport `CapNeedsInput` is `SupportNo`, and the registry will
+raise `IncidentDegraded` on every bus session — which is **correct**, and is the
+visible signal §7 depends on. Note which side the default sits on: out of the
+box the Gateway runs Claude Code with `--permission-mode bypassPermissions`.
+Registering the Gateway to start at boot therefore means an always-on process
+that executes tool calls without asking anyone, and that is a deliberate
+decision the installer has to surface rather than a detail.
+
+The path that would restore a real ask is the ACP runtime, whose
+`permission-relay` bridges it — and it is **untested here because it is not
+installed**: `/acp doctor` returns `configuredBackend: acpx, registeredBackend:
+(none), healthy: no, ACP_BACKEND_MISSING`. Also worth knowing before anyone
+plans around it: `sessions_spawn({runtime:"acp"})` is an *agent tool*, not a
+Gateway RPC, so an external client reaches it through a chat slash command
+rather than a typed call — and `sessions_spawn` sits on the Gateway's dangerous-
+tools deny list with the comment "spawning agents remotely is RCE".
+
+### Three more things the probe settled, each of which changes a design
+
+- **Transcripts land where backfill can read them, under a directory it is not
+  watching.** A Gateway-spawned Claude Code session writes an ordinary Claude
+  Code JSONL — `queue-operation` / `user` / `attachment` / `last-prompt` /
+  `assistant` rows, ~40 KB — plus OpenClaw's own transcript under
+  `<stateDir>/agents/main/sessions/`. The correlation field is
+  `sessions.json[<sessionKey>].claudeCliSessionId`, which *is* the Claude
+  transcript's filename. The catch: the project-dir slug derives from the
+  OpenClaw **agent workspace**, not from any repo, so every session for one
+  agent piles into one `~/.claude/projects/…-openclaw-workspace…` directory.
+- **`spawnedCwd` is ignored.** Set it and the run's own `pwd` still answers with
+  the agent workspace. One agent means one cwd, one `CLAUDE.md`, one skills set,
+  whatever repo the user was talking about. Per-repo isolation needs one agent
+  per workspace (`agents.create`) or `worktree:true` on `sessions.create`,
+  neither tested.
+- **A closed socket is not a session end.** The sessions outlive relayd's
+  process, which is the property `internal/registry` does not currently model —
+  `Close` lands on `SessionClosed`, `closed` is terminal, and `Recover` never
+  revisits it, so a restart permanently closes rows for sessions that are still
+  running. That is why `OPENCLAW-MIGRATION.md` makes the detach split a step of
+  its own, before the adapter.
+
+---
+
 ## 5. The normalized event model
 
-Three adapters, one internal stream. Everything above collapses to:
+Four adapters, one internal stream. Everything above collapses to:
 
 ```
 TurnStarted    { session, turn }
@@ -736,17 +918,23 @@ Error          { session, turn, message }           ⚑ PING
 
 Adapter coverage, honestly:
 
-| Event | Claude Code | Codex | ACP (OpenClaw, Hermes, OpenCode) |
-|---|---|---|---|
-| TextDelta | ✅ | ✅ | ✅ |
-| Reasoning | ✅ thinking blocks | ✅ | ✅ `agent_thought_chunk` — protocol-native; whether each of the three *emits* it is unverified, see §8 |
-| PlanUpdated | ✗ — **not emitted at all**, and that is a decision; see "Claude Code and PlanUpdated" below | ✅ native | ✅ `plan` session update |
-| ToolStarted / Output | ✅ | ✅ | ✅ |
-| NeedsInput | ✅ via permission-prompt MCP tool | ✅ native requests | ✅ `request_permission` |
-| TurnCompleted | ✅ `result` | ✅ `turn/completed` | ✅ `session/prompt` resolving with a `stopReason` |
-| Mid-turn steering | ✅ verified | ✅ `turn/steer`, but only with a matching `expectedTurnId` | ✗ **verified absent** — cancel + re-prompt |
-| **Cancel a turn** | ⚠ **only while blocked on the permission prompt**, where a deny with `interrupt: true` aborts it. `system/init` advertises `interrupt_receipt_v1`, so the feature exists, but the client-side message is not in the vendored trace — §8 item 9 | ✅ `turn/interrupt` | ✅ `session/cancel` |
-| Per-turn cost | ✅ `total_cost_usd`, **as a delta between consecutive `result` events** | ⚠ **tokens only** — `thread/tokenUsage/updated`; the contract carries no USD | ✗ **not in the protocol at all** — must come from each runtime's own store |
+| Event | Claude Code | Codex | ACP (Hermes, OpenCode) | Gateway (§4b) |
+|---|---|---|---|---|
+| TextDelta | ✅ | ✅ | ✅ | ✅ `agent` `stream:"assistant"` |
+| Reasoning | ✅ thinking blocks | ✅ | ✅ `agent_thought_chunk` — protocol-native; whether each *emits* it is unverified, see §8 | ? not seen in the probe |
+| PlanUpdated | ✗ — **not emitted at all**, and that is a decision; see "Claude Code and PlanUpdated" below | ✅ native | ✅ `plan` session update | ? not seen in the probe |
+| ToolStarted / Output | ✅ | ✅ | ✅ | ✅ `agent` `stream:"tool"`, `phase` start/result |
+| NeedsInput | ✅ via permission-prompt MCP tool | ✅ native requests | ✅ `request_permission` | ✗ **verified absent for `claude-cli`** — bypass-everything or deny-everything, nothing in between (§4b) |
+| TurnCompleted | ✅ `result` | ✅ `turn/completed` | ✅ `session/prompt` resolving with a `stopReason` | ✅ `agent` lifecycle end + `chat` final |
+| Mid-turn steering | ✅ verified | ✅ `turn/steer`, but only with a matching `expectedTurnId` | ✗ **verified absent** — cancel + re-prompt | ⚠ `sessions.steer` exists and is unadvertised, and carries **no `expectedTurnId`** — it satisfies `Session.Steer`'s signature but not its precondition |
+| **Cancel a turn** | ⚠ **only while blocked on the permission prompt**, where a deny with `interrupt: true` aborts it. `system/init` advertises `interrupt_receipt_v1`, so the feature exists, but the client-side message is not in the vendored trace — §8 item 9 | ✅ `turn/interrupt` | ✅ `session/cancel` | ⚠ `chat.abort` / `sessions.abort` exist; **not exercised by the probe** |
+| Per-turn cost | ✅ `total_cost_usd`, **as a delta between consecutive `result` events** | ⚠ **tokens only** — `thread/tokenUsage/updated`; the contract carries no USD | ✗ **not in the protocol at all** — must come from each runtime's own store | ⚠ `sessions.usage` exists, unadvertised, **unmeasured** |
+
+A `?` in that table is not a `✗`. It means the probe ran turns that never
+produced the event and nobody has since asked the question properly — a
+distinction this document has been careful about everywhere else and should stay
+careful about here, because `SupportUnknown` and `SupportNo` produce different
+behaviour in `internal/adapter/coverage.go`.
 
 ACP's `session/update` has **eight** variants, discriminated by `sessionUpdate`:
 
@@ -762,9 +950,12 @@ ACP's `session/update` has **eight** variants, discriminated by `sessionUpdate`:
 | `current_mode_update` | mode changed, possibly by the agent itself |
 
 **That `plan` variant corrects an earlier claim here** — structured plans are
-available on four of five runtimes, not only Codex, so plan-based narration is the
-normal path rather than the exception. Claude Code is the lone runtime with no
-plan at all, and the next section says what the adapter does about that.
+protocol-native on Codex and on both ACP runtimes, not only Codex, so plan-based
+narration is the normal path rather than the exception. Claude Code is the lone
+runtime with no plan at all, and the next section says what the adapter does
+about that. *This used to read "four of five runtimes", counting OpenClaw's ACP
+bridge; since §4b that count is three of the four transports, and whether the
+Gateway surfaces a plan is unmeasured rather than absent.*
 
 `current_mode_update` was missing from the earlier list of seven. It matters
 because an agent may change its own mode mid-session — "ask" to "code", say — and
@@ -779,7 +970,7 @@ expecting each one to be self-describing.
 **Per-turn cost is worse than "partial" on ACP.** The word "token" appears exactly
 twice in the whole 87-definition schema, both times in the `max_tokens` stop
 reason. There is no token count, no cost field and no usage object anywhere in the
-protocol. Metering for these three runtimes is necessarily out-of-band and
+protocol. Metering for the ACP runtimes is necessarily out-of-band and
 per-runtime, which is what §8 records.
 
 **An adapter never invents an event it cannot observe.** Where a cell is ✗, the
@@ -952,6 +1143,31 @@ JSON-RPC request, Claude Code returns from the permission-prompt tool, ACP
 answers `request_permission`. The session unblocks without anyone opening a
 terminal.
 
+**And on the Gateway there is nothing to answer.** §4b measured it: a
+`claude-cli` session is `bypassPermissions` or hard-denied, and an
+`operator.admin` observer watching a second socket saw zero approval frames in
+both configurations. This is the sharpest consequence in this document and it is
+worth stating in the form it will be met: *for a bus-hosted Claude Code session,
+Relay cannot put the user in the loop before a destructive command runs.* Three
+things follow, and all three are decisions rather than observations.
+
+1. **Write-and-execute work does not go to the bus.** `ORCHESTRATOR.md` §4b rule
+   3 says consequential actions confirm at the glasses and that the rule cannot
+   be turned off; a transport that cannot deliver it therefore cannot be given
+   that work. Routing by consequence, with a test, not a comment.
+2. **The refusal is enforced, not logged.** The shape already exists —
+   `claudecode.Options.AllowSilentMode` makes the adapter refuse a session whose
+   permission mode is not `SafeMode()` with `ErrUnsafePermissionMode`. Replacing
+   an enforced refusal with an `IncidentDegraded` row nobody reads would be a
+   regression dressed as instrumentation, so the bus adapter refuses to start
+   unless an explicit opt-in is set, *and* raises the incident.
+3. **The approval bus still matters, for the other half.** `exec.approval.*`
+   demonstrably reaches an external client (§4b(a)), which is what makes Relay a
+   usable approval surface for OpenClaw's **native** runtimes. It requires
+   `operator.admin` or a paired device id in the reviewer list, and it is
+   silently skipped by `suppressDelivery:true`. Both are the kind of gate that
+   presents as "approvals just never fire".
+
 Three things this needs to get right:
 
 **Do not interrupt the user mid-sentence.** Turn-taking is already
@@ -986,8 +1202,10 @@ Named rather than buried, because each one could change a design decision.
 | **RESOLVED** | closed, with the evidence named inline |
 | **NEEDS THE MAC** | requires a runtime installed *and authenticated with the user's own subscription*. A cloud sandbox cannot do this; device-code flows on an invisible container do not work |
 | **UPSTREAM CHURN** | not a gap in what we know — a standing risk in someone else's release cadence. Mitigated, not closable |
+| **SUPERSEDED** | the question stopped mattering because a decision moved the path out from under it. Kept, with what survives named, because a deleted question looks answered |
 
-Last dispositioned 2026-08-10.
+Last dispositioned 2026-08-13. Items 16–19 are new and all four come from §4b;
+items 3, 4, 5 and 15 were re-dispositioned by it.
 
 1. **OpenCode's `serve` HTTP API** as an alternative to its ACP mode.
    **NEEDS THE MAC.** ACP is preferred only because it shares an adapter, and
@@ -1008,22 +1226,28 @@ Last dispositioned 2026-08-10.
    has no token, cost or usage field at all — read out of the vendored schema, so
    this half is closed and closed negatively. What remains is only the
    per-runtime fallback: OpenCode has `opencode stats`, Hermes stores
-   `estimated_cost_usd` and `actual_cost_usd` per session in SQLite, and no
-   OpenClaw equivalent has been found — that last one is the open question, and
-   it needs an OpenClaw install with real history on it. Design for
+   `estimated_cost_usd` and `actual_cost_usd` per session in SQLite. Design for
    **per-provider** metering, because per-runtime is not uniformly available.
+   *The OpenClaw half of this row is retired rather than answered:* it used to
+   read "no OpenClaw equivalent has been found", and §4b found where to look —
+   `sessions.usage` on the Gateway, which exists and is callable but is not
+   advertised in `hello-ok.features.methods` and was not called. Whether it
+   returns a USD figure or only tokens is item 17.
 
-4. **Which ACP capabilities each of the three runtimes actually advertises.**
+4. **Which ACP capabilities Hermes and OpenCode actually advertise.**
    **NEEDS THE MAC.** The protocol is vendored but `agentCapabilities` is
    per-runtime and per-version. Specifically needed: one `initialize` call
-   against each of `openclaw acp`, `hermes acp` and `opencode acp`, capturing
+   against each of `hermes acp` and `opencode acp`, capturing
    `agentCapabilities.loadSession` (decides whether the registry can reattach to
    an existing session or must always start a new one) and
    `agentCapabilities.promptCapabilities.{image,audio,embeddedContext}` (decides
-   whether a glasses photo can enter a prompt). Three commands, one answer each,
+   whether a glasses photo can enter a prompt). Two commands, one answer each,
    and the answer belongs in §4. **Until then §4 must not claim reattach works.**
+   *`openclaw acp` was the third command here and has left this row twice over:
+   OpenClaw moved to §4b, and the bridge cannot start on the probed box anyway —
+   `ACP_BACKEND_MISSING`.*
 
-5. **Whether any of the three ships `_`-prefixed ACP extensions.**
+5. **Whether Hermes or OpenCode ships `_`-prefixed ACP extensions.**
    **NEEDS THE MAC.** The extension mechanism is invisible to the schema, so the
    vendored contract cannot rule out a runtime-specific steer — which matters
    because §4 concluded ACP has no mid-turn steering at all. The probe is the
@@ -1183,14 +1407,61 @@ Last dispositioned 2026-08-10.
     real recordings**, keeping the same record shape, and this item closes.
 
 15. **Whether OpenClaw's `--session` is really launch-scoped.**
-    **NEEDS THE MAC.** `openclaw acp --session agent:main:main` takes the
-    Gateway session key as an argument to the *process*, which the adapter reads
-    as "one `openclaw acp` process serves one session": `Resume` against a
-    different key returns `ErrSessionNotFound` with a message saying to dial a
-    second adapter, rather than quietly talking to whatever session the bridge
-    happens to be pointing at. That reading is inferred from the command line,
-    not probed. If the bridge in fact multiplexes — if `session/new` on a
-    process launched with one key can return a second, different `sessionId` —
-    then the guard in `internal/adapter/acp` is one adapter per session where
-    one would do, which is wasteful but not wrong. The probe is two
-    `session/new` calls on one `openclaw acp` process.
+    **SUPERSEDED — 2026-08-13, and worth reading rather than deleting.**
+    `openclaw acp --session agent:main:main` takes the Gateway session key as an
+    argument to the *process*, which the adapter read as "one `openclaw acp`
+    process serves one session". §4b makes the question moot for the shipping
+    path — the Gateway's own socket multiplexes N sessions over one connection,
+    which is what the bridge was being asked to prove it could do, and OpenClaw
+    no longer goes through the bridge. Two things survive the supersession. The
+    guard in `internal/adapter/acp` that refuses `Resume` against a different key
+    is wrong on its merits — `--session` is only a *default* key and every
+    `session/new` and `session/load` accepts a per-request `_meta.sessionKey`
+    override — and it should be deleted for Hermes and OpenCode's sake, not
+    OpenClaw's. And the reason the bridge can never be the source of truth is now
+    a measurement rather than an aesthetic: it needs the acpx plugin, which was
+    not installed, so it did not run at all.
+
+16. **The Gateway has no published schema at any installable version.**
+    **UPSTREAM CHURN, and the sharpest instance of it in this document.** The
+    beta line ships a real `protocol.schema.json`; npm `latest` — the version a
+    user gets — does not. So §4b is pinned by *recorded frames*, which cannot
+    tell you about a method nobody called. Two mitigations, both cheap and
+    neither optional: generate the schema from the installed host tarball and
+    stamp it with the host version plus a file hash, and diff the **method set**
+    between pins rather than trusting `since` markers — a method can vanish while
+    its `since` never moves, and two did inside one measured train. Note also
+    that `MIN_CLIENT_PROTOCOL_VERSION` equals `PROTOCOL_VERSION` (both 4): there
+    is no N-1 window, so a wire bump refuses Relay's client outright rather than
+    degrading it.
+
+17. **`sessions.usage`, `sessions.steer`, `chat.abort` — real, callable, and
+    unmeasured.** **NEEDS THE MAC**, and it is an hour's work rather than a day's.
+    All three are absent from `hello-ok.features.methods`, which is not an
+    enumeration, so feature discovery cannot confirm or deny them. Needed: does
+    `sessions.usage` return USD or only tokens (this is what replaces item 3's
+    OpenClaw half); does `sessions.steer` land mid-turn, given it carries no
+    `expectedTurnId` and therefore cannot satisfy `Session.Steer`'s precondition;
+    and does `chat.abort` actually stop a Claude Code turn or only detach the
+    stream. Until each is measured, `coverage.go` records `SupportUnknown` for
+    the Gateway transport — not `SupportNo`, which is a different and stronger
+    claim.
+
+18. **Whether installing acpx restores a real approval.**
+    **NEEDS THE MAC, and it is the one that decides how much work the bus can be
+    given.** `/acp doctor` on the probed box: `configuredBackend: acpx,
+    registeredBackend: (none), healthy: no, ACP_BACKEND_MISSING`. Unblocking is
+    `openclaw plugins install acpx` plus enabling it in config, pinned to the
+    **exact host version** — a bare install resolves to a `latest` that will
+    eventually exceed the pinned host and hard-fail with
+    `INCOMPATIBLE_PLUGIN_API`. Then the actual question: with an ACP-runtime
+    session, does a tool call raise something Relay can answer, end to end, from
+    a second socket? A yes moves write-and-execute work onto the bus and changes
+    §7. A no makes `claudecode` and `codex` permanent rather than transitional,
+    which is a fine answer and should be written down as one.
+
+19. **Whether the Gateway ever emits reasoning or a plan.**
+    **NEEDS THE MAC.** The probe's turns produced neither, and short turns
+    producing no plan is not evidence that plans do not exist. This is the `?`
+    column in §5 and it decides whether bus sessions get the good narration
+    material or fall back to tool activity.

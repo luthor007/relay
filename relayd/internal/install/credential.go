@@ -54,19 +54,19 @@ func askCredential(ctx context.Context, opts Options, ask CredentialAsk) (llm.Cr
 	choices := []Choice{
 		{
 			ID: "env", Label: "An environment variable",
-			Hint: "env:" + envHint(ask) + " — nothing lands on disk", Recommended: true,
+			Hint: "env:" + envHint(ask), Recommended: true,
 		},
 		{
 			ID: "file", Label: "A file on this machine",
-			Hint: "file:~/.config/relay/" + strings.ToLower(ask.Service) + ".key — 0600, read at use",
+			Hint: "file:~/.config/relay/" + strings.ToLower(ask.Service) + ".key",
 		},
 		{
 			ID: "exec", Label: "A command that prints it",
-			Hint: "exec:op read op://Private/" + ask.Label + "/credential — a password manager, so the secret never sits on disk",
+			Hint: "exec:op read op://Private/" + ask.Label + "/credential",
 		},
 		{
 			ID: "vault", Label: "Type it now, and Relay keeps it",
-			Hint: "stored in Relay's encrypted vault; the config file gets vault:<id>, never the key",
+			Hint: "kept in Relay's encrypted vault",
 		},
 	}
 	if ask.Optional {
@@ -80,10 +80,9 @@ func askCredential(ctx context.Context, opts Options, ask CredentialAsk) (llm.Cr
 	var previous llm.CredentialRef
 	for attempt := 0; attempt < maxCredentialAttempts; attempt++ {
 		kind, err := p.Select(Question{
-			ID:    ask.ID + ".kind",
-			Title: "Credential for " + ask.Label,
-			Body: "Relay stores a reference to your key, not the key. It is resolved at the " +
-				"moment of use and never written into config.toml.",
+			ID:      ask.ID + ".kind",
+			Title:   "Credential for " + ask.Label,
+			Body:    "Relay stores a reference, not the key.",
 			Choices: choices,
 			Default: "env",
 		})
@@ -160,8 +159,7 @@ func readRef(ctx context.Context, opts Options, ask CredentialAsk, kind string) 
 	case "exec":
 		v, err := p.Input(Input{
 			ID: ask.ID + ".exec", Prompt: "Command",
-			Body: "Run with /bin/sh -c, and its stdout is the secret. It has " +
-				llm.ExecTimeout.String() + " to answer.",
+			Body: "Its stdout is the secret. " + llm.ExecTimeout.String() + " to answer.",
 		})
 		if err != nil {
 			return llm.CredentialRef{}, err
@@ -179,8 +177,7 @@ func readRef(ctx context.Context, opts Options, ask CredentialAsk, kind string) 
 		}
 		secret, err := p.Input(Input{
 			ID: ask.ID + ".secret", Prompt: ask.Label + " key", Secret: true,
-			Body: "Typed keys go straight into Relay's encrypted vault. The config file gets a " +
-				"vault reference and the console will only ever show the last four characters.",
+			Body: "Goes to the vault. The config file gets a reference.",
 		})
 		if err != nil {
 			return llm.CredentialRef{}, err

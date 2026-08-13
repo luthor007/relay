@@ -125,23 +125,14 @@ func (e EmbeddingOutcome) Line() string {
 
 // --------------------------------------------------------------- the step --
 
-const embeddingPreamble = `Relay searches your history two ways at once: by keyword, which needs ` +
-	`nothing, and by meaning, which needs an embedding model. Without one, "which session was the ` +
-	`payments thing" only works if you remember a word that was actually in it.
-
-This is a step and not a setting because of one hard constraint. The index is built at a fixed vector ` +
-	`width, and that width cannot change once the first vector is written. Choosing later means ` +
-	`re-embedding everything, so it is asked now — before your history is imported.
-
-Local is the recommendation here, which is the opposite of the voice and model steps. The reason is ` +
-	`what gets sent, not what it costs. Those steps send a sentence at a time. This one sends a summary ` +
-	`of every project you have ever worked on, which is the densest description of your work that ` +
-	`exists anywhere. Keeping that on your own machine is the same argument self-hosting already makes ` +
-	`about your keys.
-
-It is not a money argument, and pretending otherwise would be easy to disprove: embedding your whole ` +
-	`history costs well under a dollar at hosted rates, once. The real trade is privacy and working ` +
-	`offline, against an install, a download and some CPU time.`
+// embeddingPreamble was four paragraphs: how search works, why the vector width
+// is fixed at create time, why local is recommended here when it is not
+// elsewhere, and why that is not a cost argument. Every word of it is the
+// reasoning behind the default — and the user is being asked to accept a
+// default, not to reconstruct it. The reasoning stays in ORCHESTRATOR.md §2c
+// and in this file's own doc comment, where the person who needs it is looking.
+const embeddingPreamble = `Search by meaning as well as by keyword. This one is asked now ` +
+	`because the index cannot be re-sized later.`
 
 func chooseEmbedding(ctx context.Context, opts Options) (EmbeddingOutcome, error) {
 	p := opts.Prompt
@@ -155,32 +146,30 @@ func chooseEmbedding(ctx context.Context, opts Options) (EmbeddingOutcome, error
 	local := Choice{
 		ID: string(EmbedLocal), Label: "Local — " + rec.Label + " on " + rt.Name(),
 		Recommended: true,
-		Hint: fmt.Sprintf("%d dimensions, which is exactly the index's width. Nothing about your "+
-			"history leaves this machine, and it keeps working with the network down. Costs an "+
-			"install, a %s download and some CPU.", rec.Dims, rec.Size),
+		Hint: fmt.Sprintf("nothing leaves this machine — the opposite of the voice and model "+
+			"steps, because this sends summaries of everything you have worked on. %s download",
+			rec.Size),
 	}
 	switch {
 	case status.Running:
-		local.Hint += "\n      " + rt.Name() + " is already running here."
+		local.Hint += " — " + rt.Name() + " is already running"
 	case status.Installed:
-		local.Hint += "\n      " + rt.Name() + " is installed here but its service is not answering."
+		local.Hint += " — " + rt.Name() + " is installed but not answering"
 	}
 
 	id, err := p.Select(Question{
 		ID:    "embedding",
-		Title: "Choose an embedding model",
+		Title: "Search",
 		Body:  embeddingPreamble,
 		Choices: []Choice{
 			local,
 			{
 				ID: string(EmbedHosted), Label: "Hosted — a provider from the same list as the models",
-				Hint: "Convenient, and genuinely cheap. The tradeoff is that summaries of everything " +
-					"you have worked on are sent to a provider.",
+				Hint: "cheap; summaries are sent to a provider",
 			},
 			{
 				ID: string(EmbedNone), Label: "None, for now", Last: true,
-				Hint: "Search stays keyword-only. It is a supported state, it says so on every " +
-					"result, and `relay embed` turns the other half on later.",
+				Hint: "keyword-only search; `relay embed` adds it later",
 			},
 		},
 		Default: string(EmbedLocal),
@@ -197,8 +186,7 @@ func chooseEmbedding(ctx context.Context, opts Options) (EmbeddingOutcome, error
 	default:
 		out.Kind = EmbedNone
 		out.Config = config.Embedding{Provider: config.EmbedProviderNone}
-		p.Say("  No embedder. Search will use keywords only, and every result will say so rather " +
-			"than quietly being worse. Run `relay embed` whenever you want the other half.")
+		p.Say("  Keyword-only search. `relay embed` adds the rest later.")
 		return out, nil
 	}
 }
@@ -318,17 +306,13 @@ func askLocalModel(opts Options) (llm.EmbedModelEntry, error) {
 	}
 	choices = append(choices, Choice{
 		ID: "other", Label: "Another model", Last: true,
-		Hint: fmt.Sprintf("Any id your local runtime can pull. It has to emit %d-dimension "+
-			"vectors, and Relay checks that before anything is written.", llm.EmbeddingDims),
+		Hint: fmt.Sprintf("any id your runtime can pull; must emit %d dimensions", llm.EmbeddingDims),
 	})
 
 	id, err := p.Select(Question{
 		ID:    "embedding.local.model",
 		Title: "Which local model?",
-		Body: fmt.Sprintf(
-			"Relay's index is %d dimensions wide and that is fixed when the index is created, so "+
-				"only models of that width are offered. The popular ones that are not — %s — are "+
-				"left out for that reason and no other.",
+		Body: fmt.Sprintf("Only %d-dimension models fit the index, so %s are not offered.",
 			llm.EmbeddingDims, strings.Join(excluded, ", ")),
 		Choices: choices,
 		Default: llm.RecommendedLocalEmbed().ID,
@@ -389,14 +373,9 @@ func provisionRuntime(ctx context.Context, opts Options, rt EmbedRuntime) (bool,
 	}
 
 	yes, err := p.Confirm(Confirm{
-		ID:     "embedding.local.install",
-		Prompt: fmt.Sprintf("Install %s?", rt.Name()),
-		Body: fmt.Sprintf(
-			"%s is the local runtime the model runs inside. It is a separate process Relay talks "+
-				"to over HTTP on this machine — nothing is linked into Relay's own binary, which "+
-				"is what keeps that a single static file with no toolchain to install.\n"+
-				"  Relay would run: %s",
-			rt.Name(), strings.Join(cmd, " ")),
+		ID:      "embedding.local.install",
+		Prompt:  fmt.Sprintf("Install %s?", rt.Name()),
+		Body:    fmt.Sprintf("Runs: %s", strings.Join(cmd, " ")),
 		Default: false,
 	})
 	if err != nil || !yes {
@@ -513,8 +492,7 @@ func chooseHostedEmbedding(ctx context.Context, opts Options) (EmbeddingOutcome,
 	// the difference between a menu and a whitelist.
 	choices = append(choices, Choice{
 		ID: customEmbedID, Label: "Custom provider", Last: true,
-		Hint: "Any endpoint that speaks OpenAI's /v1/embeddings. Relay checks the width " +
-			"before anything is written, same as every other row.",
+		Hint: "any OpenAI /v1/embeddings endpoint",
 	})
 	rec := hostedDefault()
 
@@ -535,8 +513,7 @@ func chooseHostedEmbedding(ctx context.Context, opts Options) (EmbeddingOutcome,
 		vendorID = customVendorID
 		if customBase, err = p.Input(Input{
 			ID: "embedding.hosted.base_url", Prompt: "Base URL",
-			Body: "Anything OpenAI-compatible, e.g. http://127.0.0.1:8080/v1. Relay appends " +
-				"/embeddings to it.",
+			Body: "e.g. http://127.0.0.1:8080/v1",
 		}); err != nil {
 			return out, err
 		}
