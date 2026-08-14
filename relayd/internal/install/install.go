@@ -283,7 +283,9 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return res, err
 	}
 
-	// 2. Detect.
+	// 2. Detect — after putting an earlier run's work back on PATH, so that a
+	// second run reports what is installed rather than what it can currently see.
+	restorePath(opts)
 	rep := detect.Detect(ctx, opts.Env, opts.Detect)
 	res.Report = rep
 	reportTo(p, rep)

@@ -310,6 +310,7 @@ func busInstall(ctx context.Context, opts Options, out *BusOutcome) error {
 		out.Warnings, out.Skipped = append(out.Warnings, w), "it did not install"
 		opts.Prompt.Say("  %s", w)
 	default:
+		linkGlobals(opts)
 		out.Present, out.Installed, out.Version = true, true, BusPin
 		opts.Prompt.Say("  OpenClaw %s installed.", BusPin)
 	}

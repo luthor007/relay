@@ -301,8 +301,19 @@ func servicePATH() string {
 	// nvm puts node under a version-numbered directory that nothing can guess,
 	// so the one this process is using is the only reliable source.
 	if p, err := exec.LookPath("node"); err == nil {
-		if d := filepath.Dir(p); d != "" && !contains(dirs, d) {
-			dirs = append([]string{d}, dirs...)
+		// Both the directory node is reached through and the one it really
+		// lives in. When Relay installed Node itself, ~/.local/bin/node is a
+		// symlink and the distribution's own bin is where npm puts every agent
+		// runtime — so a boot service given only the first can start Node and
+		// still not find `openclaw`.
+		cands := []string{filepath.Dir(p)}
+		if real, rerr := filepath.EvalSymlinks(p); rerr == nil {
+			cands = append(cands, filepath.Dir(real))
+		}
+		for _, d := range cands {
+			if d != "" && !contains(dirs, d) {
+				dirs = append([]string{d}, dirs...)
+			}
 		}
 	}
 	return strings.Join(dirs, ":")

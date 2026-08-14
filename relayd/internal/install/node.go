@@ -146,6 +146,38 @@ func ensureNode(ctx context.Context, opts Options, why string) (bool, error) {
 	return true, nil
 }
 
+// restorePath puts whatever an earlier run installed back within reach, before
+// anything goes looking for it.
+//
+// The report on the second run said "Claude Code not installed" about a Claude
+// Code that had been installed twenty minutes earlier. It was true from where
+// the installer stood: setup is invoked by absolute path from a shell that has
+// never had ~/.local/bin on PATH, npm's global binaries land in the Node
+// distribution's own bin, and detection runs before either directory is added.
+// So the whole first run went missing, and the honest fix is to look in the
+// places this installer itself has put things before concluding they are empty.
+//
+// Silent by design: it reports nothing, because it establishes what is true
+// rather than changing it, and the detection report immediately after is where
+// the user reads the result.
+func restorePath(opts Options) {
+	home := opts.Env.Home
+	if home == "" {
+		var err error
+		if home, err = os.UserHomeDir(); err != nil {
+			return
+		}
+	}
+	bin := filepath.Join(home, ".local", "bin")
+	if _, err := os.Stat(bin); err != nil {
+		return
+	}
+	addToPath(bin)
+	addToPath(nodeDistBin(bin))
+	// An earlier run may have installed runtimes before this linking existed.
+	linkGlobals(opts)
+}
+
 // adoptLocalNode reports whether a Node this installer previously unpacked is
 // on disk, and if so makes it visible to this process.
 func adoptLocalNode(ctx context.Context, opts Options) bool {
@@ -160,13 +192,13 @@ func adoptLocalNode(ctx context.Context, opts Options) bool {
 	if _, err := os.Stat(filepath.Join(bin, "node")); err != nil {
 		return false
 	}
-	path := os.Getenv("PATH")
-	if pathHas(path, bin) {
-		// Already on PATH and still not answering, so it is broken rather than
-		// hidden — and re-adding the same directory would not change that.
+	if pathHas(os.Getenv("PATH"), bin) && pathHas(os.Getenv("PATH"), nodeDistBin(bin)) {
+		// Both already on PATH and still not answering, so it is broken rather
+		// than hidden, and re-adding the same directories changes nothing.
 		return false
 	}
-	_ = os.Setenv("PATH", bin+string(os.PathListSeparator)+path)
+	addToPath(bin)
+	addToPath(nodeDistBin(bin))
 
 	v, ok := nodeVersion(ctx, opts)
 	if !ok || !nodeOK(v) {
@@ -174,6 +206,67 @@ func adoptLocalNode(ctx context.Context, opts Options) bool {
 	}
 	opts.Prompt.Say("  Node %s, already installed here by Relay.", v)
 	return true
+}
+
+// linkGlobals symlinks everything npm has installed globally into ~/.local/bin.
+//
+// Without this, an agent runtime Relay installs is reachable only by a process
+// that happens to have the Node distribution's bin on its PATH — which is Relay
+// itself, and nothing else. The user's own shell would not find `claude` or
+// `openclaw` after an install that reported success, and install.sh only ever
+// tells them about one directory.
+//
+// So everything ends up in that one directory. Only when Relay owns the Node:
+// a user's own nvm or Homebrew install already puts its globals somewhere they
+// have chosen, and quietly shadowing those in ~/.local/bin would be rude and
+// confusing in equal measure.
+func linkGlobals(opts Options) {
+	home := opts.Env.Home
+	if home == "" {
+		var err error
+		if home, err = os.UserHomeDir(); err != nil {
+			return
+		}
+	}
+	local := filepath.Join(home, ".local")
+	bin := filepath.Join(local, "bin")
+	dist := nodeDistBin(bin)
+	// Relay's own Node lives under ~/.local. Anything else is the user's.
+	//
+	// Both sides go through EvalSymlinks before comparing, because one of them
+	// already has: nodeDistBin resolves the link, and on macOS that turns
+	// /var/... into /private/var/..., so a literal prefix test says "not ours"
+	// about a directory that is.
+	realLocal := local
+	if r, err := filepath.EvalSymlinks(local); err == nil {
+		realLocal = r
+	}
+	if dist == "" || !strings.HasPrefix(dist, realLocal+string(filepath.Separator)) {
+		return
+	}
+	entries, err := os.ReadDir(dist)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		link := filepath.Join(bin, name)
+		if _, err := os.Lstat(link); err == nil {
+			continue // node/npm/npx, or something already linked
+		}
+		_ = os.Symlink(filepath.Join(dist, name), link)
+	}
+}
+
+// nodeDistBin resolves ~/.local/bin/node through its symlink to the bin
+// directory of the Node distribution behind it — which is where npm's global
+// installs go, and therefore where every agent runtime Relay installs lands.
+func nodeDistBin(bin string) string {
+	real, err := filepath.EvalSymlinks(filepath.Join(bin, "node"))
+	if err != nil {
+		return ""
+	}
+	return filepath.Dir(real)
 }
 
 // installNode downloads, verifies and unpacks. It returns where Node landed.
@@ -251,10 +344,25 @@ func installNode(ctx context.Context, opts Options, archive string) (string, err
 	// Scoped to this process and its children, which is exactly the blast
 	// radius wanted: nothing is written to a shell profile, and the next login
 	// is unaffected.
-	if path := os.Getenv("PATH"); !pathHas(path, bin) {
-		_ = os.Setenv("PATH", bin+string(os.PathListSeparator)+path)
-	}
+	addToPath(bin)
+	// And the distribution's own bin, which is where npm puts everything it
+	// installs globally. `npm prefix -g` under this Node answers
+	// ~/.local/node-<version>-<os>-<arch>, not ~/.local/bin — so `npm install
+	// -g @anthropic-ai/claude-code` lands a `claude` binary in a directory
+	// nothing on this machine has ever looked in. Relay installed Claude Code,
+	// Codex and OpenClaw that way and then reported all three as missing on the
+	// next run, which is exactly how it looked to the first person who tried.
+	addToPath(filepath.Join(final, "bin"))
 	return final, nil
+}
+
+// addToPath prepends a directory to this process's PATH, once.
+func addToPath(dir string) {
+	path := os.Getenv("PATH")
+	if dir == "" || pathHas(path, dir) {
+		return
+	}
+	_ = os.Setenv("PATH", dir+string(os.PathListSeparator)+path)
 }
 
 // pathHas reports whether dir is already an entry in a PATH value.

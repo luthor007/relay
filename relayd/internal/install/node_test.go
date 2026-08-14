@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -266,5 +267,139 @@ func TestAPreviouslyInstalledNodeIsAdoptedRatherThanRefetched(t *testing.T) {
 	}
 	if !pathHas(os.Getenv("PATH"), filepath.Join(opts.Env.Home, ".local", "bin")) {
 		t.Error("adopting it did not make it visible")
+	}
+}
+
+// Where npm puts what it installs.
+//
+// `npm prefix -g` under Relay's own Node answers the distribution directory —
+// ~/.local/node-<version>-<os>-<arch> — not ~/.local/bin. So `npm install -g
+// @anthropic-ai/claude-code` lands a `claude` binary in a directory nothing on
+// the machine has ever looked in. Relay installed Claude Code, Codex and
+// OpenClaw exactly that way and then reported all three as missing on the next
+// run, which is how the first person to try it found out.
+func TestNpmsGlobalBinEndsUpOnPath(t *testing.T) {
+	archive := nodeArchive("darwin", "arm64")
+	root := strings.TrimSuffix(archive, ".tar.gz")
+	opts := nodeOpts(t, nodeServer(t, archive, fakeNodeTar(t, root), ""))
+
+	t.Setenv("PATH", "/usr/bin:/bin")
+	dir, err := installNode(context.Background(), opts, archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := os.Getenv("PATH")
+	for _, want := range []string{
+		filepath.Join(opts.Env.Home, ".local", "bin"), // node, npm, npx
+		filepath.Join(dir, "bin"),                     // everything npm -g installs
+	} {
+		if !pathHas(path, want) {
+			t.Errorf("PATH is missing %s\ngot: %s", want, path)
+		}
+	}
+}
+
+// An agent runtime Relay installs has to be reachable by the user's own shell,
+// not just by Relay. install.sh warns about exactly one directory, so that is
+// where everything npm installs globally has to end up.
+func TestGlobalsAreLinkedIntoTheDirectoryTheUserWasToldAbout(t *testing.T) {
+	archive := nodeArchive("darwin", "arm64")
+	root := strings.TrimSuffix(archive, ".tar.gz")
+	opts := nodeOpts(t, nodeServer(t, archive, fakeNodeTar(t, root), ""))
+
+	dir, err := installNode(context.Background(), opts, archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// npm installing @anthropic-ai/claude-code puts `claude` here.
+	if err := os.WriteFile(filepath.Join(dir, "bin", "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	linkGlobals(opts)
+
+	link := filepath.Join(opts.Env.Home, ".local", "bin", "claude")
+	target, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("claude was installed and never linked where anyone would find it: %v", err)
+	}
+	// Compare resolved paths: on macOS the temp dir arrives as /var/... and comes
+	// back as /private/var/....
+	want, _ := filepath.EvalSymlinks(filepath.Join(dir, "bin"))
+	if got, _ := filepath.EvalSymlinks(filepath.Dir(target)); got != want {
+		t.Errorf("claude points at %s, want it inside %s", target, want)
+	}
+}
+
+// A user's own Node is theirs. Shadowing their globals in ~/.local/bin would be
+// both rude and confusing.
+func TestAUsersOwnNodeIsLeftAlone(t *testing.T) {
+	home := t.TempDir()
+	elsewhere := t.TempDir() // stands in for nvm or Homebrew
+	if err := os.MkdirAll(filepath.Join(elsewhere, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"node", "claude"} {
+		if err := os.WriteFile(filepath.Join(elsewhere, "bin", n), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bin := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(elsewhere, "bin", "node"), filepath.Join(bin, "node")); err != nil {
+		t.Fatal(err)
+	}
+
+	linkGlobals(Options{Env: detect.Env{Home: home}})
+
+	if _, err := os.Lstat(filepath.Join(bin, "claude")); err == nil {
+		t.Error("linked a binary out of a Node that Relay does not own")
+	}
+}
+
+// The second run must not disown the first.
+//
+// From a real machine: Claude Code was installed on run one and reported "not
+// installed" on run two, because detection happens before anything puts either
+// of Relay's own directories on PATH.
+func TestASecondRunFindsWhatTheFirstOneInstalled(t *testing.T) {
+	archive := nodeArchive("darwin", "arm64")
+	root := strings.TrimSuffix(archive, ".tar.gz")
+	opts := nodeOpts(t, nodeServer(t, archive, fakeNodeTar(t, root), ""))
+
+	dir, err := installNode(context.Background(), opts, archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bin", "claude"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// A fresh process: neither directory is on PATH, as in a shell that has
+	// never sourced anything Relay wrote.
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	restorePath(opts)
+
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Errorf("a runtime installed by an earlier run is still invisible: %v", err)
+	}
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Errorf("Relay's own Node is still invisible: %v", err)
+	}
+}
+
+// And it stays quiet about it: the detection report immediately after is where
+// the user reads what is on the machine.
+func TestRestoringThePathSaysNothing(t *testing.T) {
+	opts := nodeOpts(t, nil)
+	if err := os.MkdirAll(filepath.Join(opts.Env.Home, ".local", "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	restorePath(opts)
+	if out := opts.Prompt.(*Script).Output(); strings.TrimSpace(out) != "" {
+		t.Errorf("restorePath printed:\n%s", out)
 	}
 }

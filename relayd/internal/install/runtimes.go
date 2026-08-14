@@ -219,6 +219,9 @@ func offerRuntimes(ctx context.Context, opts Options, rep detect.Report) (Runtim
 			out.Warnings = append(out.Warnings, w)
 			p.Say("  %s", w)
 		default:
+			// npm put the binary in the Node distribution's bin. Bring it to
+			// the one directory install.sh told the user about.
+			linkGlobals(opts)
 			out.Installed = append(out.Installed, f.Runtime)
 			p.Say("  %s installed. You will need to sign in to it separately — that is its own "+
 				"login, not ours.", inst.Label)

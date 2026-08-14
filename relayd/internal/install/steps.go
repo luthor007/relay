@@ -281,6 +281,10 @@ func checkBus(ctx context.Context, opts Options) BusHealth {
 // RunDoctor probes everything in a config.
 func RunDoctor(ctx context.Context, opts Options) Doctor {
 	opts = opts.withDefaults()
+	// Same reason the installer does it before detecting: a doctor that reports
+	// a runtime missing because it cannot see the directory it installed it into
+	// is reporting on itself, not on the machine.
+	restorePath(opts)
 	var d Doctor
 
 	d.Bus = checkBus(ctx, opts)
