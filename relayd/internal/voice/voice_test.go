@@ -72,7 +72,7 @@ func TestPhoneNativeIsDescribedAsFastestAndWorst(t *testing.T) {
 
 func TestSimbaIsTheRecommendation(t *testing.T) {
 	r := Recommended()
-	if r.ID != "simba" {
+	if r.ID != "speechify" {
 		t.Fatalf("recommended = %q, want simba", r.ID)
 	}
 	if !strings.Contains(r.Cost, "$10") {
@@ -93,7 +93,7 @@ func TestSimbaIsTheRecommendation(t *testing.T) {
 }
 
 func TestCatalogCoversEveryRowTheDocLists(t *testing.T) {
-	want := []string{"simba", "elevenlabs", "cartesia", "deepgram", "openai", "openrouter", "edge", "phone", "local"}
+	want := []string{"speechify", "elevenlabs", "cartesia", "deepgram", "openai", "openrouter", "edge", "phone", "local"}
 	for _, id := range want {
 		if _, ok := Get(id); !ok {
 			t.Errorf("ORCHESTRATOR.md §2a lists %q and the catalog does not have it", id)
@@ -107,10 +107,10 @@ func TestPlanValidateRefusesAMuteConfiguration(t *testing.T) {
 	}
 
 	var mute *ErrWouldBeMute
-	if err := (Plan{Primary: "simba"}).Validate(); !errors.As(err, &mute) {
+	if err := (Plan{Primary: "speechify"}).Validate(); !errors.As(err, &mute) {
 		t.Errorf("a plan with no fallback must be refused, got %v", err)
 	}
-	if err := (Plan{Primary: "simba", Fallback: "elevenlabs"}).Validate(); !errors.As(err, &mute) {
+	if err := (Plan{Primary: "speechify", Fallback: "elevenlabs"}).Validate(); !errors.As(err, &mute) {
 		t.Errorf("a fallback that needs a key is not a fallback, got %v", err)
 	}
 	if err := (Plan{Primary: "nope", Fallback: "edge"}).Validate(); err == nil {
@@ -144,7 +144,7 @@ func TestProbeSynthesisesAWord(t *testing.T) {
 	})}
 
 	c := Probe(context.Background(), Config{
-		Option:     "simba",
+		Option:     "speechify",
 		Credential: llm.CredentialRef{Kind: llm.RefInline, Value: "sk-test-key"},
 		HTTPClient: client,
 	})
@@ -154,8 +154,15 @@ func TestProbeSynthesisesAWord(t *testing.T) {
 	if c.Bytes == 0 {
 		t.Error("a working voice returns audio, and bytes are the proof")
 	}
-	if !strings.Contains(gotURL, "/speech") {
+	// The endpoint that is documented and confirmed to work, not the one that
+	// was aimed at a host which never resolved.
+	if gotURL != "https://api.speechify.ai/v1/audio/stream" {
 		t.Errorf("url = %q", gotURL)
+	}
+	// Speechify names the voice `voice_id`; `voice` is silently ignored, which
+	// is how you ship a request that works and a voice nobody chose.
+	if !strings.Contains(gotBody, `"voice_id"`) {
+		t.Errorf("body = %q, want voice_id", gotBody)
 	}
 	if gotAuth != "Bearer sk-test-key" {
 		t.Errorf("auth header = %q", gotAuth)
@@ -193,7 +200,7 @@ func TestProbeClassifiesFailures(t *testing.T) {
 				return respond(tc.status, tc.body, r), nil
 			})}
 			c := Probe(context.Background(), Config{
-				Option:     "simba",
+				Option:     "speechify",
 				Credential: llm.CredentialRef{Kind: llm.RefInline, Value: "k"},
 				HTTPClient: client,
 			})
@@ -208,13 +215,13 @@ func TestProbeClassifiesFailures(t *testing.T) {
 }
 
 func TestProbeReportsMissingAndUnresolvedCredentials(t *testing.T) {
-	c := Probe(context.Background(), Config{Option: "simba"})
+	c := Probe(context.Background(), Config{Option: "speechify"})
 	if c.Reason != llm.ReasonMissingCredential {
 		t.Errorf("reason = %q, want missing_credential", c.Reason)
 	}
 
 	c = Probe(context.Background(), Config{
-		Option:     "simba",
+		Option:     "speechify",
 		Credential: llm.CredentialRef{Kind: llm.RefEnv, Value: "RELAY_TEST_DEFINITELY_UNSET"},
 	})
 	if c.Reason != llm.ReasonUnresolvedRef {
@@ -272,7 +279,7 @@ func TestProbePlanTestsTheFallbackToo(t *testing.T) {
 		return respond(200, "audio", r), nil
 	})}
 	checks := ProbePlan(context.Background(),
-		Config{Option: "simba", Credential: llm.CredentialRef{Kind: llm.RefInline, Value: "k"}, HTTPClient: client},
+		Config{Option: "speechify", Credential: llm.CredentialRef{Kind: llm.RefInline, Value: "k"}, HTTPClient: client},
 		Config{Option: "edge", HTTPClient: client},
 	)
 	if len(checks) != 2 {

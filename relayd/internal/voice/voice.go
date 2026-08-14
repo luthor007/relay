@@ -42,7 +42,7 @@ const (
 type API string
 
 const (
-	APISimba      API = "simba"
+	APISpeechify  API = "speechify"
 	APIOpenAI     API = "openai"
 	APIElevenLabs API = "elevenlabs"
 	APICartesia   API = "cartesia"
@@ -107,15 +107,15 @@ type Option struct {
 func Catalog() []Option {
 	return []Option{
 		{
-			ID: "simba", Label: "Simba 3.2", Vendor: "simba",
+			ID: "speechify", Label: "Speechify (Simba 3.2)", Vendor: "speechify",
 			Recommended: true, Default: true,
 			Synthesis: SynthHosted, Streams: true,
 			Quality:         "best of the list",
 			Latency:         "streams; first audio before the sentence ends",
 			Cost:            "$10 / M chars",
 			Hint:            "best on the list, streams, about $1.47 a month",
-			NeedsCredential: true, API: APISimba,
-			BaseURL: "https://api.simba.audio/v1", DefaultModel: "simba-3.2", DefaultVoice: "aria",
+			NeedsCredential: true, API: APISpeechify,
+			BaseURL: "https://api.speechify.ai", DefaultModel: "simba-3.2", DefaultVoice: "geffen_32",
 			Probeable: true, ProbeNote: "synthesises one word before the installer exits",
 		},
 		{

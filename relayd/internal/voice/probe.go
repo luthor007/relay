@@ -279,9 +279,14 @@ func buildRequest(ctx context.Context, opt Option, cfg Config, baseURL, secret s
 	}
 
 	switch opt.API {
-	case APISimba:
-		r, err := jsonReq(base+"/speech", map[string]any{
-			"model": model, "voice": voice, "input": ProbeWord, "format": "mp3",
+	case APISpeechify:
+		// POST /v1/audio/stream, and the body names the model and the voice as
+		// `model` and `voice_id`. The old shape here — /speech, with `voice`
+		// and a `format` — was aimed at a host that has never existed
+		// (api.simba.audio, NXDOMAIN), so nothing about it was ever confirmed
+		// against a server. Simba 3.2 is Speechify's model, not a vendor.
+		r, err := jsonReq(base+"/v1/audio/stream", map[string]any{
+			"model": model, "voice_id": voice, "input": ProbeWord,
 		})
 		if err != nil {
 			return nil, err

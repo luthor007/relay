@@ -124,9 +124,9 @@ func baseAnswers() map[string]string {
 		// also a test about the relay — the cases that care set it explicitly.
 		"relay": "off",
 
-		"voice":           "simba",
+		"voice":           "speechify",
 		"voice.cred.kind": "env",
-		"voice.cred.env":  "SIMBA_API_KEY",
+		"voice.cred.env":  "SPEECHIFY_API_KEY",
 
 		"models.small.vendor":    "openrouter",
 		"models.small.model":     "",
@@ -213,7 +213,7 @@ func tomlDecode(text string, into any) (toml.MetaData, error) {
 
 func newOpts(t *testing.T, answers map[string]string, mutate func(*Options)) (Options, *Script, *detect.MemFS) {
 	t.Helper()
-	t.Setenv("SIMBA_API_KEY", "sk-simba-abcdefgh")
+	t.Setenv("SPEECHIFY_API_KEY", "sk-speechify-abcdefgh")
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-abcdefgh")
 
 	env, fs, _ := fixtureEnv()
@@ -264,10 +264,10 @@ func TestFullInstallFromFixtures(t *testing.T) {
 	if !ok {
 		t.Fatalf("no config written to %s", opts.ConfigPath)
 	}
-	if strings.Contains(cfg, "sk-simba-abcdefgh") || strings.Contains(cfg, "sk-or-abcdefgh") {
+	if strings.Contains(cfg, "sk-speechify-abcdefgh") || strings.Contains(cfg, "sk-or-abcdefgh") {
 		t.Fatal("a secret was written into config.toml")
 	}
-	if !strings.Contains(cfg, "env:SIMBA_API_KEY") || !strings.Contains(cfg, "env:OPENROUTER_API_KEY") {
+	if !strings.Contains(cfg, "env:SPEECHIFY_API_KEY") || !strings.Contains(cfg, "env:OPENROUTER_API_KEY") {
 		t.Errorf("config should carry references:\n%s", cfg)
 	}
 
@@ -856,7 +856,7 @@ func TestTypedKeyGoesToTheVaultAndOnlyAReferenceIsWritten(t *testing.T) {
 func TestTypedKeyIsRefusedWithoutAVault(t *testing.T) {
 	answers := baseAnswers()
 	answers["voice.cred.kind"] = "vault"
-	answers["voice.cred.env"] = "SIMBA_API_KEY"
+	answers["voice.cred.env"] = "SPEECHIFY_API_KEY"
 
 	opts, script, fs := newOpts(t, answers, nil) // no vault
 	res, err := Run(context.Background(), opts)
