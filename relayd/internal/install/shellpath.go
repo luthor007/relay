@@ -1,10 +1,14 @@
 package install
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/luthor007/relay/relayd/internal/detect"
 )
 
 // Making what was installed typeable.
@@ -43,7 +47,7 @@ type ShellPathOutcome struct {
 const pathMarker = "# added by relay setup"
 
 // offerShellPath asks to put ~/.local/bin on the user's PATH for good.
-func offerShellPath(opts Options) (ShellPathOutcome, error) {
+func offerShellPath(ctx context.Context, opts Options) (ShellPathOutcome, error) {
 	p := opts.Prompt
 	home := opts.Env.Home
 	if home == "" {
@@ -54,13 +58,21 @@ func offerShellPath(opts Options) (ShellPathOutcome, error) {
 	}
 	out := ShellPathOutcome{Dir: filepath.Join(home, ".local", "bin")}
 
-	// The question is about the user's own shell, so it is their PATH that
-	// decides it — not this process's, which restorePath has already added to.
-	if pathHas(opts.Env.Getenv("PATH"), out.Dir) {
+	profile, kind := shellProfile(opts, home)
+
+	// The question is about the user's own shell, and it has to be asked of
+	// that shell.
+	//
+	// This used to read os.Getenv("PATH"), which is this process's — and
+	// restorePath adds ~/.local/bin to it three hundred lines earlier, so the
+	// answer was always "already there" and the question never fired on any
+	// real machine. It fired in tests, whose Getenv is a map. So: ask a login
+	// shell what its PATH is, and fall back to reading the file that would have
+	// set it.
+	if shellSeesDir(ctx, opts, profile, out.Dir) {
 		out.AlreadyThere = true
 		return out, nil
 	}
-	profile, kind := shellProfile(opts, home)
 	if profile == "" {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
 			"%s is not on your PATH, so `relay` and the agent runtimes it installed cannot be "+
@@ -154,4 +166,35 @@ func exportLine(dir, kind string) string {
 		return fmt.Sprintf("fish_add_path %s", dir)
 	}
 	return fmt.Sprintf("export PATH=%q:$PATH", dir)
+}
+
+// shellSeesDir reports whether a terminal the user opens next would find dir.
+//
+// A login+interactive shell is what a terminal window starts, and it is the
+// only thing that can answer this: the directory can arrive from a profile, an
+// /etc/paths entry, a version manager's hook, or something Relay has never
+// heard of. Asking is cheap and exact; inferring is neither.
+func shellSeesDir(ctx context.Context, opts Options, profile, dir string) bool {
+	if sh := opts.Env.Getenv("SHELL"); sh != "" && opts.Env.Exec != nil {
+		// -i because a terminal window is interactive and that is where zsh
+		// reads .zshrc; -l because it is a login shell on macOS. Bounded,
+		// because somebody's rc file is somebody else's program.
+		res, err := opts.Env.Exec.Run(ctx, detect.Cmd{
+			Name: sh, Args: []string{"-lic", "printf %s \"$PATH\""},
+			Timeout: 10 * time.Second,
+		})
+		if err == nil && res.Code == 0 {
+			if out := res.Out(); out != "" {
+				return pathHas(out, dir)
+			}
+		}
+	}
+	// The shell would not answer. The file it would have read is the next best
+	// evidence, and a line already in it means a new terminal has this.
+	if profile != "" {
+		if b, err := opts.FS.ReadFile(profile); err == nil && strings.Contains(string(b), dir) {
+			return true
+		}
+	}
+	return false
 }

@@ -2,6 +2,8 @@ package install
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 
 	"github.com/luthor007/relay/relayd/internal/config"
 	"github.com/luthor007/relay/relayd/internal/llm"
@@ -163,6 +165,22 @@ func busHandoffCandidate(ctx context.Context, opts Options, models ModelsOutcome
 	return struct{ Choice, Env, Label string }{}, "", false
 }
 
+// claudeBinary is where Relay's own install put Claude Code, when it did.
+func claudeBinary(opts Options) string {
+	home := opts.Env.Home
+	if home == "" {
+		var err error
+		if home, err = os.UserHomeDir(); err != nil {
+			return ""
+		}
+	}
+	path := filepath.Join(home, ".local", "bin", "claude")
+	if _, err := os.Lstat(path); err != nil {
+		return ""
+	}
+	return path
+}
+
 // waitForClaudeLogin sends the user to another terminal and waits for them.
 //
 // It is a question and not a poll: `claude` is an interactive login, Relay
@@ -171,11 +189,22 @@ func busHandoffCandidate(ctx context.Context, opts Options, models ModelsOutcome
 // say the command, wait, and then check the one file that decides it.
 func waitForClaudeLogin(opts Options) (bool, error) {
 	p := opts.Prompt
+	// The command has to work in the shell it is typed into.
+	//
+	// The first version of this said "run `claude`", and a real run met exactly
+	// what it deserved: a new terminal, `zsh: command not found: claude`, and a
+	// user stuck between two windows. Relay installs into ~/.local/bin, which a
+	// fresh shell has no reason to know about, so the instruction names the
+	// binary by the path Relay put it at.
+	cmd := "claude"
+	if abs := claudeBinary(opts); abs != "" {
+		cmd = abs
+	}
 	for attempt := 0; attempt < 2; attempt++ {
 		yes, err := p.Confirm(Confirm{
 			ID:     "bus.claude.login",
 			Prompt: "Signed in?",
-			Body: "Open another terminal window and run:\n\n    claude\n\n" +
+			Body: "Open another terminal window and run:\n\n    " + cmd + "\n\n" +
 				"Sign in there, then come back here and press return. Relay reads nothing but " +
 				"the fact that a login exists — the Gateway then runs Claude work through " +
 				"Claude Code itself.",
@@ -190,8 +219,10 @@ func waitForClaudeLogin(opts Options) (bool, error) {
 		if claudeCLISignedIn(opts) {
 			return true, nil
 		}
-		p.Say("  %s", wrapIndent("No Claude Code login here yet. It writes "+
-			claudeCLICredentials+" when it finishes, and that file is not there.", 2, 76))
+		p.Say("  %s", wrapIndent("No Claude Code login here yet. It writes ~/"+
+			claudeCLICredentials+" when it finishes, and that file is not there. If that "+
+			"terminal said `command not found`, it is the PATH question from a moment ago: "+
+			"the command above is the full path, and it works either way.", 2, 76))
 	}
 	return false, nil
 }

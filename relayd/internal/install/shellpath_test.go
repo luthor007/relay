@@ -2,6 +2,7 @@ package install
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,17 +13,32 @@ import (
 // The step that answers "zsh: command not found: codex" about a codex this
 // installer put on the machine twenty minutes earlier.
 
-func pathOpts(t *testing.T, answers map[string]string, shell, path string) (Options, *Script, *detect.MemFS) {
+// pathOpts builds a machine whose login shell reports shellPATH — which is the
+// only PATH that decides this question, and emphatically not this process's.
+func pathOpts(t *testing.T, answers map[string]string, shell, shellPATH string) (Options, *Script, *detect.MemFS) {
 	t.Helper()
 	home := t.TempDir()
 	fs := &detect.MemFS{}
 	script := NewScript(answers)
-	env := map[string]string{"SHELL": shell, "PATH": path}
+	ex := &detect.FakeExec{
+		Paths:     map[string]string{filepath.Base(shell): shell},
+		Responses: map[string]detect.Result{},
+	}
+	if shellPATH != "" {
+		ex.Responses[detect.Key(shell, "-lic", `printf %s "$PATH"`)] = detect.Result{
+			Stdout: []byte(shellPATH),
+		}
+	}
 	return Options{
 		Prompt: script, FS: fs,
 		Env: detect.Env{
-			Home: home, GOOS: "darwin", FS: fs, Exec: &detect.FakeExec{},
-			Getenv: func(k string) string { return env[k] },
+			Home: home, GOOS: "darwin", FS: fs, Exec: ex,
+			Getenv: func(k string) string {
+				if k == "SHELL" {
+					return shell
+				}
+				return ""
+			},
 		},
 	}.withDefaults(), script, fs
 }
@@ -30,7 +46,7 @@ func pathOpts(t *testing.T, answers map[string]string, shell, path string) (Opti
 func TestThePathLineIsOfferedAndWritten(t *testing.T) {
 	opts, script, fs := pathOpts(t, map[string]string{"path.profile": "yes"}, "/bin/zsh", "/usr/bin:/bin")
 
-	out, err := offerShellPath(opts)
+	out, err := offerShellPath(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,20 +71,13 @@ func TestThePathLineIsOfferedAndWritten(t *testing.T) {
 // A shell that can already find it is not asked anything. This step is not
 // worth a question on a machine where the answer is already yes.
 func TestNothingIsAskedWhenTheShellAlreadyLooksThere(t *testing.T) {
-	home := t.TempDir()
-	fs := &detect.MemFS{}
-	script := NewScript(map[string]string{})
-	env := map[string]string{
-		"SHELL": "/bin/zsh",
-		"PATH":  "/usr/bin:" + filepath.Join(home, ".local", "bin") + ":/bin",
-	}
-	opts := Options{
-		Prompt: script, FS: fs,
-		Env: detect.Env{Home: home, GOOS: "darwin", FS: fs, Exec: &detect.FakeExec{},
-			Getenv: func(k string) string { return env[k] }},
-	}.withDefaults()
+	opts, script, _ := pathOpts(t, map[string]string{}, "/bin/zsh", "")
+	// The shell's own report is what counts, and it names the directory.
+	dir := filepath.Join(opts.Env.Home, ".local", "bin")
+	opts.Env.Exec.(*detect.FakeExec).Responses[detect.Key("/bin/zsh", "-lic", `printf %s "$PATH"`)] =
+		detect.Result{Stdout: []byte("/usr/bin:" + dir + ":/bin")}
 
-	out, err := offerShellPath(opts)
+	out, err := offerShellPath(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,11 +89,43 @@ func TestNothingIsAskedWhenTheShellAlreadyLooksThere(t *testing.T) {
 	}
 }
 
+// The bug that shipped in v0.2.9 and fired on nobody.
+//
+// restorePath puts ~/.local/bin on the INSTALLER's PATH three hundred lines
+// before this step, so a step that reads os.Getenv("PATH") always concludes
+// there is nothing to do — on every real machine, while passing every test,
+// because a fixture's Getenv is a map. The user's shell is a different program
+// and has to be asked.
+func TestTheInstallersOwnPathDoesNotAnswerForTheUsers(t *testing.T) {
+	opts, script, fs := pathOpts(t, map[string]string{"path.profile": "yes"}, "/bin/zsh", "/usr/bin:/bin")
+	dir := filepath.Join(opts.Env.Home, ".local", "bin")
+
+	// Exactly what restorePath does, to this process, before this step runs.
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+
+	out, err := offerShellPath(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.AlreadyThere {
+		t.Fatal("the installer's own PATH was taken as the user's")
+	}
+	if !out.Added {
+		t.Fatalf("out = %+v, want the question asked and answered", out)
+	}
+	if !strings.Contains(fs.Files[filepath.Join(opts.Env.Home, ".zshrc")], dir) {
+		t.Error("nothing was written for a shell that cannot see the directory")
+	}
+	if len(script.Asked) == 0 {
+		t.Error("the user was never asked")
+	}
+}
+
 // No means no, and the machine is left exactly as it was.
 func TestDecliningWritesNothing(t *testing.T) {
 	opts, script, fs := pathOpts(t, map[string]string{"path.profile": "no"}, "/bin/zsh", "/usr/bin")
 
-	out, err := offerShellPath(opts)
+	out, err := offerShellPath(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,14 +146,14 @@ func TestDecliningWritesNothing(t *testing.T) {
 func TestASecondRunDoesNotAppendASecondLine(t *testing.T) {
 	opts, _, fs := pathOpts(t, map[string]string{"path.profile": "yes"}, "/bin/zsh", "/usr/bin")
 
-	if _, err := offerShellPath(opts); err != nil {
+	if _, err := offerShellPath(context.Background(), opts); err != nil {
 		t.Fatal(err)
 	}
 	first := fs.Files[filepath.Join(opts.Env.Home, ".zshrc")]
 
 	// The line is in the file and still not in this process's PATH, which is
 	// exactly the state of a rerun in the same terminal.
-	out, err := offerShellPath(opts)
+	out, err := offerShellPath(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +170,7 @@ func TestASecondRunDoesNotAppendASecondLine(t *testing.T) {
 func TestFishGetsFishSyntax(t *testing.T) {
 	opts, _, fs := pathOpts(t, map[string]string{"path.profile": "yes"}, "/opt/homebrew/bin/fish", "/usr/bin")
 
-	if _, err := offerShellPath(opts); err != nil {
+	if _, err := offerShellPath(context.Background(), opts); err != nil {
 		t.Fatal(err)
 	}
 	conf := fs.Files[filepath.Join(opts.Env.Home, ".config", "fish", "config.fish")]
@@ -146,7 +187,7 @@ func TestFishGetsFishSyntax(t *testing.T) {
 func TestAnUnknownShellIsToldRatherThanGuessedAt(t *testing.T) {
 	opts, script, fs := pathOpts(t, map[string]string{}, "/usr/bin/exotic", "/usr/bin")
 
-	out, err := offerShellPath(opts)
+	out, err := offerShellPath(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,5 +228,60 @@ func TestAFullRunOffersThePathLine(t *testing.T) {
 	}
 	if rc := fs.Files[home+"/.zshrc"]; !strings.Contains(rc, "/.local/bin") {
 		t.Errorf("~/.zshrc = %q", rc)
+	}
+}
+
+// Order matters, and this is why.
+//
+// From a real run: the Gateway step said "open another terminal window and run
+// `claude`", the user did, and that terminal said `command not found` — because
+// the line that would have taught it was four steps further down the install.
+// The offer has to come before the first thing that sends somebody elsewhere to
+// type something.
+func TestThePathIsOfferedBeforeAnythingSendsYouToAnotherTerminal(t *testing.T) {
+	answers := baseAnswers()
+	answers["path.profile"] = "yes"
+	answers["bus.ack"] = "yes"
+	answers["bus.install"] = "yes"
+	answers["bus.auth"] = "claude"
+	answers["bus.claude.login"] = "no"
+
+	opts, script, _ := newOpts(t, answers, func(o *Options) {
+		busEnv(t, "v24.19.0", false)(o)
+		env := map[string]string{"SHELL": "/bin/zsh"}
+		inner := o.Env.Getenv
+		o.Env.Getenv = func(k string) string {
+			if v, ok := env[k]; ok {
+				return v
+			}
+			return inner(k)
+		}
+	})
+	if _, err := Run(context.Background(), opts); err != nil {
+		t.Fatalf("%v\n%s", err, script.Output())
+	}
+
+	var path, login int = -1, -1
+	for i, id := range script.Asked {
+		switch id {
+		case "path.profile":
+			if path < 0 {
+				path = i
+			}
+		case "bus.claude.login":
+			if login < 0 {
+				login = i
+			}
+		}
+	}
+	if path < 0 {
+		t.Fatalf("the PATH question was never asked:\n%v", script.Asked)
+	}
+	if login < 0 {
+		t.Skip("this fixture never reached the sign-in question")
+	}
+	if path > login {
+		t.Errorf("asked to open another terminal (%d) before making the command typeable (%d):\n%v",
+			login, path, script.Asked)
 	}
 }

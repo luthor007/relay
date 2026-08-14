@@ -363,6 +363,24 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return res, err
 	}
 
+	// 4b. Make what was just installed typeable, BEFORE anything sends the user
+	// to another terminal to type it.
+	//
+	// This sat at the end of the run until a real one reached the Gateway step,
+	// which says "open another terminal window and run `claude`" — into a shell
+	// that had never heard of claude, because the line that would have told it
+	// was still four steps away. A terminal opened after this point has it.
+	sp, err := offerShellPath(ctx, opts)
+	if err != nil {
+		return res, err
+	}
+	res.ShellPath = sp
+	res.Warnings = append(res.Warnings, sp.Warnings...)
+
+	if err := stopIfCancelled(ctx, p); err != nil {
+		return res, err
+	}
+
 	// 5a. The bus. Still after the models, but no longer because it borrows
 	// their credential: it does not, and trying to cost a whole install (see
 	// bus.go rule 2). It stays here because the model menu has just explained
@@ -480,16 +498,6 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		res.Warnings = append(res.Warnings, svc.Warnings...)
 		reportService(p, svc)
 	}
-
-	// 8b. And make it typeable. Everything above installed things into
-	// ~/.local/bin and then told the user to run them; this is where that stops
-	// being a lie on a machine whose shell has never looked there.
-	sp, err := offerShellPath(opts)
-	if err != nil {
-		return res, err
-	}
-	res.ShellPath = sp
-	res.Warnings = append(res.Warnings, sp.Warnings...)
 
 	// 9. The pairing code — before any long-running work.
 	code, err := PairingCode(opts.Rand)
