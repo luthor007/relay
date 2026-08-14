@@ -29,6 +29,7 @@ import (
 	"github.com/luthor007/relay/relayd/internal/config"
 	"github.com/luthor007/relay/relayd/internal/logx"
 	"github.com/luthor007/relay/relayd/internal/orchestrator"
+	"github.com/luthor007/relay/relayd/internal/pairing"
 	"github.com/luthor007/relay/relayd/internal/registry"
 	"github.com/luthor007/relay/relayd/internal/store"
 	"github.com/luthor007/relay/relayd/internal/vault"
@@ -280,6 +281,14 @@ func run(ctx context.Context, args []string, ready func(net.Addr)) error {
 	// user does not pay for.
 	utterances := newUtteranceRouter(ctx, reg, orch, entitlements(cfg, log), proposer, log)
 
+	// The token the phone will present, resolved before the server exists so a
+	// machine with nowhere to keep it fails loudly here rather than serving an
+	// API that nothing can pair with.
+	apiToken, err := pairing.Token(f.token, cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("relayd: no API token: %w", err)
+	}
+
 	srv, err := api.New(api.Options{
 		Registry: reg,
 		// Without this the console renders empty in the shipped daemon while
@@ -302,12 +311,16 @@ func run(ctx context.Context, args []string, ready func(net.Addr)) error {
 		Utterances:         utteranceHandler(utterances),
 		Gateway:            tools.handler(),
 		Gate:               gate,
-		Token:              f.token,
-		Listen:             cfg.Listen,
-		LAN:                f.lan,
-		Version:            version,
-		StartedAt:          time.Now(),
-		Log:                log,
+		// Durable, not fresh-per-start. A token that changed on every restart
+		// was a phone that unpaired itself at every reboot — and the only place
+		// it was ever published was a log line at startup, which under launchd
+		// nobody reads. See internal/pairing.
+		Token:     apiToken,
+		Listen:    cfg.Listen,
+		LAN:       f.lan,
+		Version:   version,
+		StartedAt: time.Now(),
+		Log:       log,
 	})
 	if err != nil {
 		return err

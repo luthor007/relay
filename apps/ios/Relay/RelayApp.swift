@@ -7,6 +7,7 @@ import UIKit
 struct RelayApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = Composition.makeModel()
+    @State private var paired = false
 
     var body: some Scene {
         WindowGroup {
@@ -14,6 +15,19 @@ struct RelayApp: App {
                 .environmentObject(model)
                 .preferredColorScheme(.dark)
                 .task { await delegate.attach(model) }
+                // `relay pair` prints a relay:// link; tapping it here is the
+                // whole pairing flow. The link carries a token, so it is
+                // applied and not displayed.
+                .onOpenURL { url in
+                    if BoxSettings.apply(pairing: url.absoluteString) {
+                        paired = true
+                    }
+                }
+                .alert("Paired", isPresented: $paired) {
+                    Button("OK") {}
+                } message: {
+                    Text("Quit and reopen Relay to connect to your box.")
+                }
         }
     }
 }
@@ -49,10 +63,12 @@ enum Composition {
     /// coordinator was a no-op and nothing the phone observed ever reached the
     /// box. See `RelaydWebSocket` for why the socket carries a bearer token.
     static func makeLink() -> RelaydLink? {
-        guard let address = BoxSettings.address,
-              let url = BoxSettings.socketURL(from: address),
+        guard let url = BoxSettings.socketURL,
               let token = BoxSettings.token, !token.isEmpty
         else { return nil }
+        // Through the relay the credential cannot ride the handshake; see
+        // RelaydWebSocket.authFrame.
+        let relayed = BoxSettings.isRelayed
 
         // relayd has no device registry, so there is no issued DeviceCredential
         // to carry. The token is the whole credential; the rest of this struct
@@ -70,7 +86,8 @@ enum Composition {
             url: url,
             credential: credential,
             socketFactory: { url, subprotocols in
-                RelaydWebSocket(url: url, token: token, subprotocols: subprotocols)
+                RelaydWebSocket(url: url, token: token, subprotocols: subprotocols,
+                                authInBand: relayed)
             }
         )
     }

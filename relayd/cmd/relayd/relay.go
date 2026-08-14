@@ -2,18 +2,13 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base32"
-	"errors"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/coder/websocket"
 
 	"github.com/luthor007/relay/relayd/internal/api"
 	"github.com/luthor007/relay/relayd/internal/config"
+	"github.com/luthor007/relay/relayd/internal/pairing"
 	"github.com/luthor007/relay/relayd/internal/relaylink"
 )
 
@@ -27,6 +22,26 @@ const SubsystemRelay = "relay"
 // speaks first. A v2 is a second entry in the map, served alongside this one for
 // as long as consoles in the wild ask for it.
 const ProtoConsole = "console.v1"
+
+// ProtoPhone is the label a phone puts on the same route.
+//
+// The phone's protocol over the relay is the phone's protocol on the LAN, frame
+// for frame — see [api.Server.ServeSocket], which was written for exactly this
+// and says so. The single difference is where the credential goes: a bearer
+// header on the LAN, an auth frame through the relay, because the relay
+// terminates the handshake the header would have ridden on.
+const ProtoPhone = "phone.v1"
+
+// phoneSocket adapts the API server's phone half, authenticated.
+//
+// Not *api.Server directly: ServeSocket does no authentication by design, and
+// a relayed stream has had none done for it. ServeRelayedSocket is the one that
+// demands the credential first.
+type phoneSocket struct{ srv *api.Server }
+
+func (p phoneSocket) ServeSocket(ctx context.Context, c *websocket.Conn) {
+	p.srv.ServeRelayedSocket(ctx, c)
+}
 
 // httpSocket adapts the API server's console half to [relaylink.SocketServer].
 //
@@ -81,7 +96,14 @@ func startRelay(ctx context.Context, cfg config.Config, dataDir string, srv *api
 		// authorization check added to internal/api is reachable and enforced on
 		// every path the day it lands, with no relay-only branch to keep in
 		// step.
-		Protocols:  map[string]relaylink.SocketServer{ProtoConsole: httpSocket{srv}},
+		Protocols: map[string]relaylink.SocketServer{
+			ProtoConsole: httpSocket{srv},
+			// SYSTEM.md §7's actual promise: a phone on cellular reaching a
+			// machine behind NAT. Without this entry the relay carried the
+			// console and nothing else, and the app could only ever work on
+			// the same network as the box.
+			ProtoPhone: phoneSocket{srv},
+		},
 		MaxStreams: cfg.Relay.MaxStreams,
 		// The health line is pushed rather than sampled. This subsystem's state
 		// moves on its own — a relay goes away, a box reconnects — and a status
@@ -117,65 +139,9 @@ func relayStatus(link *relaylink.Link, why string) string {
 
 // boxIdentity returns this machine's durable name at the relay.
 //
-// Configured wins. Otherwise it is generated once and written beside the
-// databases, because it has to survive a restart: a phone paired with this box
-// reaches it by this id, and a daemon that minted a new one on every start would
-// be a different machine every morning.
-//
-// The file is 0600 not because the id is secret — it is not, and config.Relay
-// says so at length — but because everything else in the data directory is, and
-// one world-readable file in there is an invitation to assume the rest are too.
+// It lives in internal/pairing now, because `relay pair` has to read the same
+// file this writes: a pairing link naming a different box than the daemon
+// registered is a link that connects to nothing.
 func boxIdentity(configured, dataDir string) (string, error) {
-	if id := strings.TrimSpace(configured); id != "" {
-		return id, nil
-	}
-	if strings.TrimSpace(dataDir) == "" {
-		return "", errors.New("no data directory to keep it in")
-	}
-	path := filepath.Join(dataDir, "box-id")
-
-	if b, err := os.ReadFile(path); err == nil {
-		if id := strings.TrimSpace(string(b)); id != "" {
-			return id, nil
-		}
-		// An empty file is a half-finished write from a previous start. Falling
-		// through regenerates it rather than registering with the relay under
-		// the empty string, which would collide with every other box that did.
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
-
-	id, err := newBoxID()
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		return "", err
-	}
-	// Written through a temporary file: a torn write here is the empty-file case
-	// above, and doing it atomically means that case only ever comes from a
-	// power cut rather than from a crash mid-start.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(id+"\n"), 0o600); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
-// newBoxID mints an identifier.
-//
-// 80 bits, Crockford-ish base32 without padding, so it survives being read aloud
-// or pasted into a URL. Not derived from anything about the machine — a
-// hostname or a MAC would leak something about the household to a relay that is
-// deliberately told as little as possible.
-func newBoxID() (string, error) {
-	var b [10]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	enc := base32.NewEncoding("0123456789abcdefghjkmnpqrstvwxyz").WithPadding(base32.NoPadding)
-	return "box-" + enc.EncodeToString(b[:]), nil
+	return pairing.BoxID(configured, dataDir)
 }

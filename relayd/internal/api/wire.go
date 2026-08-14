@@ -65,6 +65,13 @@ const (
 	TypeAck   = "ack"
 	TypeError = "error"
 
+	// TypeAuth is phone → server, and only over a relayed socket. On the LAN
+	// the credential rides the handshake as `Authorization: Bearer …`; through
+	// the rendezvous relay that handshake terminates at the relay, which is a
+	// pipe and not this daemon, so the header never arrives. The token becomes
+	// the first frame instead. See [Server.ServeRelayedSocket].
+	TypeAuth = "auth"
+
 	// TypeNotify is the silent-but-present notification. ADAPTERS.md §7 requires
 	// a channel that reaches the phone without speaking — quiet hours hold the
 	// speech and keep the notification — and SYSTEM.md §4 already lists "push

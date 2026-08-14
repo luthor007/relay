@@ -17,13 +17,49 @@ import RelayKit
 struct BoxView: View {
     @State private var address: String = BoxSettings.address ?? ""
     @State private var token: String = BoxSettings.token ?? ""
+    @State private var pairing: String = ""
     @State private var saved = false
+    @State private var badLink = false
 
     private var resolved: URL? { BoxSettings.socketURL(from: address) }
 
     var body: some View {
         NavigationStack {
             Form {
+                // The way this is meant to happen. `relay pair` prints one
+                // link; a tapped link does this without the screen being
+                // opened at all, and this is for a link that arrived somewhere
+                // it cannot be tapped.
+                Section {
+                    TextField("relay://box-…:…@rz.relay.glass", text: $pairing)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Button("Use this link") {
+                        if BoxSettings.apply(pairing: pairing) {
+                            address = BoxSettings.address ?? ""
+                            token = BoxSettings.token ?? ""
+                            pairing = ""
+                            saved = true
+                            badLink = false
+                        } else {
+                            badLink = true
+                        }
+                    }
+                    .disabled(pairing.isEmpty)
+                } header: {
+                    Text("Pairing link")
+                } footer: {
+                    if badLink {
+                        Text("That is not a pairing link. `relay pair` on your box prints one.")
+                            .foregroundStyle(.red)
+                    } else if BoxSettings.isRelayed {
+                        Text("Paired through the relay, so this works away from home.")
+                    } else {
+                        Text("Run `relay pair` on your box. The link carries the token — treat it "
+                             + "like one.")
+                    }
+                }
+
                 Section {
                     TextField("192.168.1.42:8080", text: $address)
                         .textInputAutocapitalization(.never)
@@ -58,6 +94,10 @@ struct BoxView: View {
                     Button("Save") {
                         BoxSettings.address = address
                         BoxSettings.token = token
+                        // Typing an address by hand is the LAN route, and a box
+                        // id left over from a relay pairing would send it to
+                        // the relay instead.
+                        BoxSettings.boxID = nil
                         saved = true
                     }
                     .disabled(address.isEmpty || token.isEmpty || resolved == nil)
@@ -66,6 +106,7 @@ struct BoxView: View {
                         BoxSettings.clear()
                         address = ""
                         token = ""
+                        pairing = ""
                         saved = true
                     }
                     .disabled(!BoxSettings.isConfigured)

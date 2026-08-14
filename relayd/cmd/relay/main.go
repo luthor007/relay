@@ -39,6 +39,7 @@ import (
 	"github.com/luthor007/relay/relayd/internal/config"
 	"github.com/luthor007/relay/relayd/internal/detect"
 	"github.com/luthor007/relay/relayd/internal/install"
+	"github.com/luthor007/relay/relayd/internal/pairing"
 	"github.com/luthor007/relay/relayd/internal/search"
 	"github.com/luthor007/relay/relayd/internal/store"
 	"github.com/luthor007/relay/relayd/internal/vault"
@@ -176,7 +177,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	case "service":
 		return cmdService(ctx, g, rest, stdout)
 	case "pair":
-		return cmdPair(stdout)
+		return cmdPair(g, stdout)
 	case "status":
 		return cmdStatus(g, stdout)
 	}
@@ -605,12 +606,48 @@ func cmdService(ctx context.Context, g globals, rest []string, out io.Writer) er
 	return fmt.Errorf("relay service: unknown action %q (install or uninstall)", action)
 }
 
-func cmdPair(out io.Writer) error {
-	code, err := install.PairingCode(nil)
+// cmdPair prints what a phone needs to reach this machine.
+//
+// It used to print a six-character code that nothing checked and no daemon had
+// ever heard of — a pairing flow's costume without the flow. What the app
+// actually needs is the relay, this box's durable name at it, and the token;
+// relayd keeps the last two beside its databases, so this reads them rather
+// than inventing anything.
+func cmdPair(g globals, out io.Writer) error {
+	cfg, err := config.Load(g.configFile())
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "\n      %s\n\nEnter this in the Relay app. It is valid for 10 minutes.\n", code)
+	dir := cfg.DataDir
+	if dir == "" {
+		if d, err := config.DataDir(); err == nil {
+			dir = d
+		}
+	}
+
+	box, okBox := pairing.Read(dir, pairing.BoxIDFile)
+	token, okToken := pairing.Read(dir, pairing.TokenFile)
+	if !okBox || !okToken {
+		fmt.Fprintln(out, "\nThis machine has not started relayd yet, so it has no durable identity "+
+			"to pair with. Start it once — `relay service install` does, and so does a reboot — "+
+			"then run this again.")
+		return nil
+	}
+
+	link, err := pairing.Link(cfg.Relay.URL, box, token)
+	if err != nil {
+		// A LAN-only box is a real configuration, and the phone can still be
+		// pointed at it by hand. Say so rather than failing.
+		fmt.Fprintf(out, "\n  %s\n", err.Error())
+		fmt.Fprintf(out, "\n  On this network, enter these in the Relay app instead:\n")
+		fmt.Fprintf(out, "    Address  %s\n    Token    %s\n", cfg.Listen, token)
+		return nil
+	}
+
+	fmt.Fprintf(out, "\n  %s\n\n", link)
+	fmt.Fprintln(out, "  Open that on your phone — a message to yourself, or AirDrop — and it opens")
+	fmt.Fprintln(out, "  the Relay app already paired. It carries the token, so treat it like one.")
+	fmt.Fprintf(out, "\n  By hand: relay %s, box %s\n", cfg.Relay.URL, box)
 	return nil
 }
 

@@ -58,7 +58,9 @@ targets:
         # NEHotspotConfiguration needs an entitlement, and the entitlement needs
         # an App ID that has it enabled. See the file's own comment.
         CODE_SIGN_ENTITLEMENTS: Relay/Relay.entitlements
-        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        # Relay/Assets.xcassets/AppIcon.appiconset. Empty until there was an
+        # icon to name, which showed on a Home Screen as a white square.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
 
   RelayKitTests:

@@ -435,3 +435,83 @@ func (s *Server) Speak(text string, sessionID string) {
 		Speak: &Speak{Text: text, Session: sessionID},
 	})
 }
+
+// authPayload is TypeAuth's body: the same token the LAN path sends as a bearer.
+type authPayload struct {
+	Token string `json:"token"`
+}
+
+// relayAuthDeadline bounds the wait for the first frame.
+//
+// A relayed socket that never authenticates costs a goroutine and a slot at the
+// relay. Ten seconds is long enough for a phone that just woke up on cellular
+// and short enough that a stranger holding sockets open gets nowhere.
+const relayAuthDeadline = 10 * time.Second
+
+// ServeRelayedSocket runs the phone protocol over a socket that arrived through
+// the rendezvous relay, after authenticating it.
+//
+// [Server.ServeSocket] deliberately does no authentication: on the inbound path
+// the router has already done it, and duplicating the check there would be a
+// second implementation to keep in step. A relayed socket has had no such
+// check — the handshake it came from terminated at the relay — so this is where
+// the credential is demanded, and the whole of the difference between the two
+// paths is the frame below.
+//
+// The BoxID comment in relaylink says anyone who learns a box's id "can open a
+// socket to this daemon, and get exactly as far as a stranger on the LAN —
+// which is nowhere, because the API authenticates." That sentence is only true
+// if this function exists; wiring ServeSocket straight onto the relay would
+// have handed the write scope to anybody who knew a public identifier.
+func (s *Server) ServeRelayedSocket(parent context.Context, c *websocket.Conn) {
+	ctx, cancel := context.WithTimeout(parent, relayAuthDeadline)
+	defer cancel()
+
+	typ, data, err := c.Read(ctx)
+	if err != nil {
+		s.log.Warn("api: relayed socket sent no opening frame", "error", err)
+		_ = c.Close(websocket.StatusPolicyViolation, "expected an auth frame")
+		return
+	}
+	if typ != websocket.MessageText {
+		_ = c.Close(websocket.StatusPolicyViolation, "frames are JSON text")
+		return
+	}
+	// Decode is the same door every other frame comes through, version check
+	// and all: an auth frame from a phone a version ahead is refused here
+	// rather than half-understood.
+	env, err := Decode(data)
+	if err != nil {
+		s.log.Warn("api: relayed socket sent an undecodable opening frame", "error", err)
+		_ = c.Close(websocket.StatusPolicyViolation, "expected an auth frame")
+		return
+	}
+	if env.Type != TypeAuth {
+		s.log.Warn("api: relayed socket did not authenticate first", "type", env.Type)
+		_ = c.Close(websocket.StatusPolicyViolation, "the first frame must be auth")
+		return
+	}
+	var p authPayload
+	if len(env.Payload) > 0 {
+		_ = json.Unmarshal(env.Payload, &p)
+	}
+
+	// Authenticated through the same Authenticator the HTTP router uses, by
+	// handing it the credential in the form it already understands. One
+	// implementation of "is this token good", reachable from both paths.
+	r, rerr := http.NewRequestWithContext(parent, http.MethodGet, "/v1/ws", nil)
+	if rerr != nil {
+		_ = c.Close(websocket.StatusInternalError, "")
+		return
+	}
+	r.Header.Set("Authorization", "Bearer "+p.Token)
+	id, aerr := s.authn.Authenticate(r)
+	if aerr != nil || !id.Can(ScopeWrite) {
+		s.log.Warn("api: relayed socket refused", "error", aerr)
+		_ = c.Close(websocket.StatusPolicyViolation, "unauthorized")
+		return
+	}
+
+	// The deadline was for the credential, not for the session.
+	s.ServeSocket(parent, c)
+}

@@ -2,6 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- relay://<box>:<token>@<relay host> — what `relay pair` prints. A link
+	     tapped in a message or scanned from a QR opens this app already paired,
+	     which is the difference between one tap and typing forty random
+	     characters on a phone keyboard. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>glass.relay.pairing</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>relay</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>

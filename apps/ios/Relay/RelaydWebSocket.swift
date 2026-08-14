@@ -43,7 +43,22 @@ final class RelaydWebSocket: NSObject, RelaydSocket, @unchecked Sendable {
     /// that closed while already closed and logs a state it never entered.
     private var finished = false
 
-    init(url: URL, token: String, subprotocols: [String]) {
+    /// The opening frame for a relayed socket, or nil on the LAN.
+    ///
+    /// The bearer header below reaches the box on a local network and reaches
+    /// the *relay* through the rendezvous, which is a pipe that forwards bytes
+    /// and not headers. So the credential becomes the first frame instead, and
+    /// `api.Server.ServeRelayedSocket` refuses the socket without it.
+    private let authFrame: String?
+
+    init(url: URL, token: String, subprotocols: [String], authInBand: Bool = false) {
+        // Built by RelayKit, where the shape is pinned by a test against the
+        // frame `api.Server.ServeRelayedSocket` demands.
+        authFrame = authInBand
+            ? PairingLink.authFrame(token: token, id: UUID().uuidString,
+                                    at: Int(Date().timeIntervalSince1970 * 1000))
+            : nil
+
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if !subprotocols.isEmpty {
@@ -80,6 +95,13 @@ final class RelaydWebSocket: NSObject, RelaydSocket, @unchecked Sendable {
             if let error {
                 self.finish { $0.onClose?(1006, "handshake failed: \(error.localizedDescription)") }
             } else {
+                // Before anything else, and before the link is told it is
+                // open: the box refuses a relayed socket whose first frame is
+                // not the credential, so an utterance that beat it to the wire
+                // would close the socket rather than be delivered.
+                if let frame = self.authFrame {
+                    self.send(frame)
+                }
                 self.currentHandlers?.onOpen?()
             }
         }

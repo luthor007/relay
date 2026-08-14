@@ -244,14 +244,28 @@ func TestStatusReadsAConfig(t *testing.T) {
 	}
 }
 
-func TestPairPrintsACode(t *testing.T) {
+// `relay pair` prints what the phone needs, and says so plainly when there is
+// nothing to print.
+//
+// It used to print a six-character code — with a dash in it, which is what the
+// old assertion checked — that nothing on either side has ever verified. A test
+// that passes on a costume is worse than no test.
+func TestPairSaysWhatIsMissingRatherThanInventingACode(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_DATA_HOME", dir)
+
 	var out, errb bytes.Buffer
 	if err := run(context.Background(), []string{"pair"}, &out, &errb); err != nil {
 		t.Fatal(err)
 	}
-	s := strings.TrimSpace(out.String())
-	if !strings.Contains(s, "-") || len(s) < 9 {
-		t.Errorf("pair = %q", s)
+	s := out.String()
+	if !strings.Contains(s, "has not started relayd yet") {
+		t.Errorf("pair on a machine with no identity = %q", s)
+	}
+	// And it must not print something that looks like a credential.
+	if strings.Contains(s, "relay://") {
+		t.Errorf("invented a pairing link out of nothing:\n%s", s)
 	}
 }
 
