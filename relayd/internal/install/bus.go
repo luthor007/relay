@@ -516,14 +516,17 @@ func busOnboard(ctx context.Context, opts Options, auth busAuth, out *BusOutcome
 		out.AgentAuth = auth.Choice
 	}
 	if out.AgentAuth == "" {
-		// Said here rather than left for the summary, because the next sentence
-		// on screen is "Gateway configured" and that would otherwise read as a
-		// Gateway that can run a session.
-		w := "the Gateway has no agent login yet, so it cannot run a session. Sign in to " +
-			"Claude Code with `claude`, or run `openclaw onboard` for anything else, and " +
-			"`relay setup` picks it up"
-		out.Warnings = append(out.Warnings, w)
-		opts.Prompt.Say("  %s", wrapIndent(w+".", 2, 76))
+		// Said, and not warned about.
+		//
+		// It was a warning until a finished install ended with one thing
+		// needing attention: "the Gateway has no agent login yet, so it cannot
+		// run a session." Nothing in Relay asks it to run a session, and this
+		// step does not start it — so that is a description of the design,
+		// printed under a heading that means something is wrong, on an install
+		// where nothing was.
+		opts.Prompt.Say("  %s", wrapIndent("It has no agent login, which costs nothing while "+
+			"nothing dials it. `openclaw onboard` gives it one, interactively, for the day "+
+			"something does.", 2, 76))
 	}
 	if auth.Label != "" {
 		opts.Prompt.Say("  Gateway configured, on loopback, with %s.", auth.Label)

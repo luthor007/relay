@@ -512,11 +512,15 @@ func TestClaudeCodeInstalledButNotSignedInStillGetsAGateway(t *testing.T) {
 	if argv := argvOf(cmd); !strings.Contains(argv, "--auth-choice skip") {
 		t.Errorf("sent a choice that onboarding refuses:\n%s", argv)
 	}
-	// And it says what to do about it, naming the commands that fix it.
-	out := script.Output()
-	for _, want := range []string{"`claude`", "openclaw onboard"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("the user is not told about %s:\n%s", want, out)
+	// It is said, and it is not a warning: a finished install that ends with
+	// "1 thing needs your attention" about a Gateway nothing dials has invented
+	// a defect out of a design decision.
+	if !strings.Contains(script.Output(), "openclaw onboard") {
+		t.Errorf("never says how to give it a login:\n%s", script.Output())
+	}
+	for _, w := range res.Bus.Warnings {
+		if strings.Contains(w, "no agent login") {
+			t.Errorf("reported the design as something needing attention: %q", w)
 		}
 	}
 }
