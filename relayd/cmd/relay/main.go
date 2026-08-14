@@ -59,6 +59,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
+		// Ctrl-C is not an error to report back at somebody who just pressed
+		// it. The step that stopped has already said so in its own words;
+		// printing "relay: context canceled" underneath adds a fault where the
+		// user made a choice. 130 is the conventional exit for SIGINT.
+		if errors.Is(err, context.Canceled) {
+			os.Exit(130)
+		}
 		fmt.Fprintln(os.Stderr, "relay:", err)
 		os.Exit(1)
 	}
@@ -229,7 +236,7 @@ func (g globals) options(ctx context.Context, out io.Writer) (install.Options, e
 	// MEMORY.md §7 step 4, switched on: the field that turns the MCP write half
 	// from an enumeration into an adoption. It stays zero unless the gateway is
 	// answering right now — see gatewayIfLive.
-	opts.Gateway = gatewayIfLive(ctx, cfg, out)
+	opts.Gateway, opts.GatewayNote = gatewayIfLive(ctx, cfg, out)
 	return opts, nil
 }
 

@@ -137,6 +137,9 @@ func reconcileMCP(ctx context.Context, opts Options, rep detect.Report) (MCPOutc
 	}
 
 	p.Section("Tools you already have", out.Inventory.Headline())
+	if opts.Gateway.Zero() && opts.GatewayNote != "" {
+		p.Say("  %s", wrapIndent(opts.GatewayNote, 2, 76))
+	}
 	for _, s := range out.Inventory.Servers {
 		names := map[string]bool{}
 		for _, n := range s.Names {

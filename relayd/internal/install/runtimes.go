@@ -2,6 +2,7 @@ package install
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -55,7 +56,7 @@ func Installers() []RuntimeInstaller {
 	return []RuntimeInstaller{
 		{
 			Runtime: adapter.ClaudeCode, Label: "Claude Code",
-			Why: "Where a Claude subscription works.",
+			Why: "Where your Claude subscription works, if you have one.",
 			Methods: []InstallMethod{
 				{Requires: "npm", Command: []string{"npm", "install", "-g", "@anthropic-ai/claude-code"}},
 			},
@@ -63,7 +64,7 @@ func Installers() []RuntimeInstaller {
 		},
 		{
 			Runtime: adapter.Codex, Label: "Codex",
-			Why: "Where a ChatGPT subscription works.",
+			Why: "Where your ChatGPT subscription works, if you have one.",
 			Methods: []InstallMethod{
 				{Requires: "npm", Command: []string{"npm", "install", "-g", "@openai/codex"}},
 			},
@@ -128,11 +129,22 @@ func offerRuntimes(ctx context.Context, opts Options, rep detect.Report) (Runtim
 		return out, nil
 	}
 
+	// "5 of the five" is what the old line printed on a clean machine, which
+	// reads as a typo because it is one.
+	count := fmt.Sprintf("%d of the five", len(missing))
+	if len(missing) == len(Installers()) {
+		count = "All five"
+	}
 	p.Section("Anything else?", fmt.Sprintf(
-		"%d of the five agent runtimes are missing. Nothing is installed unless you say so.",
-		len(missing)))
+		"%s agent runtimes are missing. Nothing is installed unless you say so.", count))
 
 	for _, f := range missing {
+		// Between rows, because the loop asks one question per runtime and an
+		// interrupt at the first of them used to be answered by asking the next
+		// three — each one failing instantly with "context canceled".
+		if err := ctx.Err(); err != nil {
+			return out, err
+		}
 		inst, ok := installerFor(f.Runtime)
 		if !ok {
 			continue
@@ -189,6 +201,11 @@ func offerRuntimes(ctx context.Context, opts Options, rep detect.Report) (Runtim
 			Timeout: 10 * time.Minute,
 		})
 		switch {
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+			// Not a failed install — an interrupted one. Saying "Claude Code
+			// did not install: context canceled" blames npm for the user's
+			// own Ctrl-C.
+			return out, err
 		case err != nil:
 			w := fmt.Sprintf("%s did not install: %v", inst.Label, err)
 			out.Warnings = append(out.Warnings, w)

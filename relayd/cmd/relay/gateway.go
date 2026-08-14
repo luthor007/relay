@@ -34,10 +34,10 @@ const gatewayProbeTimeout = time.Second
 //
 // So the rule is: the endpoint we write is one we have just spoken MCP to. A
 // config value is a plan; a completed initialize is a fact.
-func gatewayIfLive(ctx context.Context, cfg config.Config, out io.Writer) install.MCPGateway {
+func gatewayIfLive(ctx context.Context, cfg config.Config, out io.Writer) (install.MCPGateway, string) {
 	base := listenURL(cfg.Listen)
 	if base == "" {
-		return install.MCPGateway{}
+		return install.MCPGateway{}, ""
 	}
 	d := mcp.HTTPDescriptor("relay", base)
 
@@ -46,12 +46,16 @@ func gatewayIfLive(ctx context.Context, cfg config.Config, out io.Writer) instal
 		// where relayd is not up should still do everything else. But it is
 		// said out loud, because "my tools did not appear" is otherwise a
 		// silent outcome.
-		fmt.Fprintf(out, "  mcp        gateway not reachable at %s (%v)\n", d.URL, err)
-		fmt.Fprintf(out, "             leaving the five runtimes' servers as they are; "+
-			"start relayd and run this again to share them\n")
-		return install.MCPGateway{}
+		// Returned rather than printed. This runs before the installer has
+		// said anything at all, so printing here made a connection-refused
+		// error the first line a new machine ever showed — which reads as a
+		// failed install of something that has not started yet. The MCP step
+		// says it, in its own section, where it means something.
+		return install.MCPGateway{}, fmt.Sprintf(
+			"relayd is not answering on %s yet, so the runtimes' servers are left as they "+
+				"are. Once it starts, `relay mcp` shares them.", d.URL)
 	}
-	return d.Install()
+	return d.Install(), ""
 }
 
 // listenURL turns a listen address into something a runtime on this machine can

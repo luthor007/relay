@@ -48,14 +48,20 @@ func TestAdoptionNeedsALiveGateway(t *testing.T) {
 	var out bytes.Buffer
 	cfg := config.Config{Listen: "127.0.0.1:1"} // nothing is listening there
 
-	g := gatewayIfLive(context.Background(), cfg, &out)
+	g, note := gatewayIfLive(context.Background(), cfg, &out)
 	if !g.Zero() {
 		t.Fatalf("adopted a gateway that is not running: %+v", g)
 	}
-	// And says so, because "my tools did not appear" is otherwise silent.
-	for _, want := range []string{"not reachable", "start relayd"} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("the output never says %q:\n%s", want, out.String())
+	// It still says so — "my tools did not appear" must not be silent — but it
+	// RETURNS the sentence rather than printing it. This runs before the
+	// installer has said a word, so printing here made a connection-refused
+	// error the first line a clean machine ever showed.
+	if out.Len() != 0 {
+		t.Errorf("printed before the installer started:\n%s", out.String())
+	}
+	for _, want := range []string{"not answering", "relay mcp"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("the note never says %q: %q", want, note)
 		}
 	}
 }

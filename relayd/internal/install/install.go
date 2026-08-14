@@ -104,6 +104,10 @@ type Options struct {
 	// (build order step 6), and the MCP step refuses to rewrite anybody's
 	// config while it is zero. See mcp.go.
 	Gateway MCPGateway
+	// GatewayNote is why Gateway is zero, when a caller checked and found
+	// nothing answering. Printed by the MCP step rather than by the check, so
+	// it lands in context instead of before the installer's first word.
+	GatewayNote string
 
 	// ReadCodexAuth overrides detection of an existing Codex CLI login. Nil
 	// reads the real machine — the Keychain and CODEX_HOME/auth.json.
@@ -239,6 +243,23 @@ const accessBody = `Shell, filesystem and processes on this machine, under your 
 Nothing else — no mail, no calendar, no repos. Those get asked for later, one at a time, ` +
 	`when something you did makes one useful.`
 
+// stopIfCancelled turns a cancelled context into the end of the run.
+//
+// Ctrl-C cancels the context but does not, on its own, stop anything: the
+// installer kept walking its steps with every exec and every network call
+// failing instantly, asking four more questions and reporting "did not install:
+// context canceled" as though npm had refused. Seen on the first clean-machine
+// run, where somebody interrupted at the Claude Code prompt and the installer
+// carried on to the voice menu. An interrupt is an answer, and the answer is no.
+func stopIfCancelled(ctx context.Context, p Prompter) error {
+	if err := ctx.Err(); err != nil {
+		p.Say("\n  Stopped. Nothing further was installed, and what you already " +
+			"answered is not saved — `relay setup` starts again from the top.")
+		return err
+	}
+	return nil
+}
+
 // Run performs the install.
 func Run(ctx context.Context, opts Options) (Result, error) {
 	opts = opts.withDefaults()
@@ -258,10 +279,18 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	// 1. Say what this takes, before it takes anything.
 	p.Section("What this install takes", accessBody)
 
+	if err := stopIfCancelled(ctx, p); err != nil {
+		return res, err
+	}
+
 	// 2. Detect.
 	rep := detect.Detect(ctx, opts.Env, opts.Detect)
 	res.Report = rep
 	reportTo(p, rep)
+
+	if err := stopIfCancelled(ctx, p); err != nil {
+		return res, err
+	}
 
 	// 3. Offer to install the rest.
 	rt, err := offerRuntimes(ctx, opts, rep)
@@ -270,6 +299,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	res.Runtimes = rt
 	res.Warnings = append(res.Warnings, rt.Warnings...)
+
+	if err := stopIfCancelled(ctx, p); err != nil {
+		return res, err
+	}
 
 	// 4. Voice.
 	v, err := verifyVoice(ctx, opts)
@@ -280,6 +313,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	res.Config.Voice = v.Config
 	res.Warnings = append(res.Warnings, v.Warnings...)
 
+	if err := stopIfCancelled(ctx, p); err != nil {
+		return res, err
+	}
+
 	// 5. The two models.
 	m, err := chooseModels(ctx, opts)
 	if err != nil {
@@ -288,6 +325,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	res.Models = m
 	res.Config.Models = m.Config
 	res.Warnings = append(res.Warnings, m.Warnings...)
+
+	if err := stopIfCancelled(ctx, p); err != nil {
+		return res, err
+	}
 
 	// 5a. The bus. Still after the models, but no longer because it borrows
 	// their credential: it does not, and trying to cost a whole install (see
@@ -313,10 +354,18 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		}
 	}
 
+	if err := stopIfCancelled(ctx, p); err != nil {
+		return res, err
+	}
+
 	// 5b. MEMORY.md §6's second arrival path, and the only moment it can
 	// honestly run: the runtimes' own config files are enumerable now, with the
 	// user watching. It proposes and never stores — see discover.go.
 	res.Discovery = discoverConfigKeys(ctx, opts)
+
+	if err := stopIfCancelled(ctx, p); err != nil {
+		return res, err
+	}
 
 	// 5c. MEMORY.md §8's missing input. It sits here, after the model menu, on
 	// purpose: the menu has just printed claudePreamble — "your Claude Max plan
@@ -331,6 +380,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	res.Entitlements = ents
 	res.Config.Routing.Entitlements = ents.Entitlements
 
+	if err := stopIfCancelled(ctx, p); err != nil {
+		return res, err
+	}
+
 	// 6. The embedding model, before the pairing code and therefore before the
 	// backfill. The width cannot change once the index exists.
 	opts.Config = res.Config
@@ -341,6 +394,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	res.Embedding = emb
 	res.Warnings = append(res.Warnings, emb.Warnings...)
 
+	if err := stopIfCancelled(ctx, p); err != nil {
+		return res, err
+	}
+
 	// 7. MCP, reconciled from five.
 	mcp, err := reconcileMCP(ctx, opts, rep)
 	if err != nil {
@@ -348,6 +405,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	res.MCP = mcp
 	res.Warnings = append(res.Warnings, mcp.Warnings...)
+
+	if err := stopIfCancelled(ctx, p); err != nil {
+		return res, err
+	}
 
 	// 7b. The relay, before the config is written and therefore before the
 	// pairing code — a phone that pairs over the relay needs the daemon to
