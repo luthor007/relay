@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -73,6 +75,11 @@ type BusOutcome struct {
 	// Config is what relayd needs to dial this Gateway: the socket, and a
 	// REFERENCE to its token. Zero when there is nothing to dial.
 	Config config.Bus
+	// AgentAuth names the login the Gateway was configured with, or is empty
+	// when it was configured without one. A Gateway with no agent login is a
+	// running Gateway that cannot yet run a session, and the two must not read
+	// the same in a summary.
+	AgentAuth string
 	// Skipped records why the step did nothing, when it did nothing.
 	Skipped  string
 	Warnings []string
@@ -95,6 +102,11 @@ func (b BusOutcome) Line() string {
 		s := fmt.Sprintf("OpenClaw %s — answering on port %d", b.Version, b.Port)
 		if b.Registered {
 			s += ", and at boot"
+		}
+		if b.AgentAuth == "" {
+			// A Gateway that answers and cannot run a session is not a working
+			// bus, and a summary that says "answering" without this reads as one.
+			s += ", with no agent login yet"
 		}
 		return s
 	case b.Configured:
@@ -335,10 +347,58 @@ func busInstall(ctx context.Context, opts Options, out *BusOutcome) error {
 // What the Gateway actually needs is the machine's own agent logins, and
 // `--auth-choice anthropic-cli` is the one that gives it them: it writes the
 // agents.defaults.models[anthropic/*].agentRuntime = claude-cli bindings that
-// make sessions.create resolve to a real Claude Code turn. Without a Claude
-// Code on the box there is nothing to bind, so the flag is omitted and their
-// own defaults stand.
-func busOnboard(ctx context.Context, opts Options, claudeCLI bool, out *BusOutcome) {
+// make sessions.create resolve to a real Claude Code turn.
+//
+// That flag used to be passed whenever Claude Code was INSTALLED, which is a
+// different fact from signed in, and a clean machine has the first without the
+// second:
+//
+//	the Gateway was not configured: Auth choice "anthropic-cli" requires
+//	Claude CLI auth on this host.
+//
+// It refuses before writing anything, so a machine that had just installed
+// Claude Code got no Gateway at all. The precondition is now checked here, in
+// the one place OpenClaw's non-interactive path looks — see claudeCLISignedIn —
+// and a machine that does not meet it is onboarded with `--auth-choice skip`,
+// which configures a Gateway with no agent login rather than no Gateway.
+// claudeCLICredentials is where the Claude CLI keeps its login, relative to
+// home. It is the ONLY place OpenClaw's non-interactive onboarding looks.
+//
+// Their interactive path reads the macOS Keychain item "Claude Code-credentials"
+// first and falls back to this file; the non-interactive path — the one Relay
+// drives — passes allowKeychainPrompt: false and reads only the file, because a
+// Keychain prompt in an unattended run is a dialog nobody is there to answer.
+// So "signed in" for our purposes means this file, and checking the Keychain
+// here would produce a yes that OpenClaw then answers with a no.
+const claudeCLICredentials = ".claude/.credentials.json"
+
+// claudeCLISignedIn reports whether `--auth-choice anthropic-cli` will be
+// accepted, rather than whether Claude Code is installed.
+func claudeCLISignedIn(opts Options) bool {
+	home := opts.Env.Home
+	if home == "" {
+		var err error
+		if home, err = os.UserHomeDir(); err != nil {
+			return false
+		}
+	}
+	read := os.ReadFile
+	if opts.Env.FS != nil {
+		read = opts.Env.FS.ReadFile
+	}
+	b, err := read(filepath.Join(home, claudeCLICredentials))
+	if err != nil {
+		return false
+	}
+	// The file exists on a machine that has merely started Claude Code. What
+	// OpenClaw requires from it is this object.
+	var f struct {
+		OAuth json.RawMessage `json:"claudeAiOauth"`
+	}
+	return json.Unmarshal(b, &f) == nil && len(f.OAuth) > 0
+}
+
+func busOnboard(ctx context.Context, opts Options, claudeInstalled bool, out *BusOutcome) {
 	args := []string{
 		"onboard", "--non-interactive", "--accept-risk",
 		"--flow", "quickstart",
@@ -357,9 +417,11 @@ func busOnboard(ctx context.Context, opts Options, claudeCLI bool, out *BusOutco
 		args = append(args, "--install-daemon")
 	}
 	// `claude-cli` is rejected as deprecated; the live name is `anthropic-cli`.
-	if claudeCLI {
-		args = append(args, "--auth-choice", "anthropic-cli")
+	auth := "skip"
+	if claudeCLISignedIn(opts) {
+		auth = "anthropic-cli"
 	}
+	args = append(args, "--auth-choice", auth)
 
 	res, err := opts.Env.Exec.Run(ctx, busCmd(opts, args, 5*time.Minute))
 
@@ -389,6 +451,24 @@ func busOnboard(ctx context.Context, opts Options, claudeCLI bool, out *BusOutco
 		return
 	}
 	out.Configured = true
+	if auth != "skip" {
+		out.AgentAuth = auth
+	}
+	if out.AgentAuth == "" {
+		// Said here rather than left for the summary, because the next sentence
+		// on screen is "Gateway configured" and that would otherwise read as a
+		// Gateway that can run a session.
+		w := "the Gateway has no agent login yet, so it cannot run a session"
+		if claudeInstalled {
+			w += ": Claude Code is installed here but not signed in. Run `claude` once, " +
+				"then `relay setup` again and the Gateway picks it up"
+		} else {
+			w += ". Sign in to an agent runtime — `claude`, or `openclaw onboard` — " +
+				"and run `relay setup` again"
+		}
+		out.Warnings = append(out.Warnings, w)
+		opts.Prompt.Say("  %s", wrapIndent(w+".", 2, 76))
+	}
 	// A clean exit with --install-daemon means their own daemon-install and
 	// health phases both passed, which is the only evidence of boot
 	// registration this step gets for free.

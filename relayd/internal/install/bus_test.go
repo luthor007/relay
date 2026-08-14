@@ -158,6 +158,21 @@ func (g *busGateway) RoundTrip(r *http.Request) (*http.Response, error) {
 // busEnv is a machine with a usable Node and, optionally, OpenClaw. The port in
 // the fixture is deliberately not OpenClaw's default: a health check that only
 // works on 18789 is a health check that assumed instead of asking.
+// withClaudeCLILogin writes the file OpenClaw's non-interactive onboarding
+// reads. Installed and signed in are different facts about a machine, and this
+// is the second one.
+func withClaudeCLILogin(t *testing.T) func(*Options) {
+	t.Helper()
+	return func(o *Options) {
+		fs, ok := o.Env.FS.(*detect.MemFS)
+		if !ok {
+			t.Fatalf("fixture filesystem is %T, not a MemFS", o.Env.FS)
+		}
+		fs.Files[o.Env.Home+"/"+claudeCLICredentials] =
+			`{"claudeAiOauth":{"accessToken":"a","refreshToken":"r","expiresAt":9999999999999}}`
+	}
+}
+
 func busEnv(t *testing.T, nodeVer string, openclaw bool) func(*Options) {
 	t.Helper()
 	busInstant(t)
@@ -340,6 +355,9 @@ func TestRelaysKeyStaysRelaysAndTheOnboardIsOneOpenClawAccepts(t *testing.T) {
 	opts, script, _ := newOpts(t, answers, func(o *Options) {
 		busEnv(t, "v24.19.0", false)(o)
 		gw.attach(o)
+		// Signed in, which is what anthropic-cli requires and what installed
+		// alone does not prove.
+		withClaudeCLILogin(t)(o)
 		// Onboarding starts the daemon it just installed, so the port answers
 		// by the time the health check runs.
 		ex := o.Env.Exec.(*busExec)
@@ -372,7 +390,8 @@ func TestRelaysKeyStaysRelaysAndTheOnboardIsOneOpenClawAccepts(t *testing.T) {
 		t.Errorf("Relay's orchestrator key was offered to the Gateway:\n%s", argv)
 	}
 	// The auth choice that actually binds the claude-cli runtime. `claude-cli`
-	// is the deprecated spelling and is rejected.
+	// is the deprecated spelling and is rejected, and anthropic-cli is only
+	// accepted on a machine where the Claude CLI is signed in.
 	if !strings.Contains(argv, "--auth-choice anthropic-cli") {
 		t.Errorf("the Gateway got no runtime binding, so sessions.create has "+
 			"no model that resolves:\n%s", argv)
@@ -399,9 +418,10 @@ func TestRelaysKeyStaysRelaysAndTheOnboardIsOneOpenClawAccepts(t *testing.T) {
 	}
 }
 
-// No Claude Code on the box means no login to bind, so the flag is omitted
-// rather than sent hopefully. The Gateway is still configured — it drives
-// seventeen harnesses and Claude Code is only the one Relay can prove.
+// No Claude Code login on the box means no binding to make, so onboarding is
+// told that in the one word it accepts — `skip` — rather than being sent a
+// choice it will refuse. The Gateway is still configured: it drives seventeen
+// harnesses and Claude Code is only the one Relay can prove.
 func TestWithoutClaudeCodeTheGatewayIsStillConfiguredWithoutTheBinding(t *testing.T) {
 	gw := &busGateway{}
 	answers := baseAnswers()
@@ -429,8 +449,60 @@ func TestWithoutClaudeCodeTheGatewayIsStillConfiguredWithoutTheBinding(t *testin
 	if !ok {
 		t.Fatal("the Gateway was never onboarded")
 	}
-	if argv := argvOf(cmd); strings.Contains(argv, "--auth-choice") {
+	argv := argvOf(cmd)
+	if strings.Contains(argv, "anthropic-cli") {
 		t.Errorf("an auth choice was sent for a login this machine does not have:\n%s", argv)
+	}
+	// Omitting the flag entirely is not the same thing: their non-interactive
+	// path wants to be told, and `skip` is what it is told.
+	if !strings.Contains(argv, "--auth-choice skip") {
+		t.Errorf("onboarding was left to guess at the auth choice:\n%s", argv)
+	}
+	// And the summary does not claim a Gateway that can run a session.
+	if res.Bus.AgentAuth != "" {
+		t.Errorf("AgentAuth = %q, want empty on a machine with no agent login", res.Bus.AgentAuth)
+	}
+}
+
+// The failure a clean machine actually hit: Claude Code installed twenty
+// minutes earlier, never signed in, and onboarding refusing the whole config
+// over it —
+//
+//	the Gateway was not configured: Auth choice "anthropic-cli" requires
+//	Claude CLI auth on this host.
+//
+// Installed is not signed in, and the difference is one file.
+func TestClaudeCodeInstalledButNotSignedInStillGetsAGateway(t *testing.T) {
+	gw := &busGateway{}
+	answers := baseAnswers()
+	answers["bus.ack"] = "yes"
+	answers["bus.install"] = "yes"
+	opts, script, _ := newOpts(t, answers, func(o *Options) {
+		busEnv(t, "v24.19.0", false)(o)
+		gw.attach(o)
+		// Installed — the fixture's exec has `claude` on PATH — and no
+		// credentials file anywhere.
+		o.Env.Exec.(*busExec).Hook = func(c detect.Cmd) {
+			if busVerb(c) == "onboard" {
+				gw.up = true
+			}
+		}
+	})
+	res, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, script.Output())
+	}
+	if !res.Bus.Configured {
+		t.Fatalf("bus = %+v, want a configured Gateway rather than none", res.Bus)
+	}
+	cmd, _ := busRan(busExecOf(t, opts), "onboard")
+	if argv := argvOf(cmd); !strings.Contains(argv, "--auth-choice skip") {
+		t.Errorf("sent a choice that onboarding refuses:\n%s", argv)
+	}
+	// And it says what to do about it, naming the command that fixes it.
+	out := script.Output()
+	if !strings.Contains(out, "not signed in") || !strings.Contains(out, "`claude`") {
+		t.Errorf("the user is not told how to give the Gateway a login:\n%s", out)
 	}
 }
 

@@ -61,10 +61,11 @@ type EmbedRuntime interface {
 	// and "not running" are facts about the machine, not failures to ask.
 	Status(ctx context.Context) LocalStatus
 
-	// InstallCommand is the exact command Install will run, so it can be shown
-	// before it is agreed to. Empty means Relay has none for this machine and
+	// InstallPlan is exactly what Install will do, so it can be shown before it
+	// is agreed to: somebody else's command run as-is, or a download Relay
+	// performs itself. Not OK means Relay has no way to install this here and
 	// says so — a wrong install command is worse than no suggestion.
-	InstallCommand() []string
+	InstallPlan() InstallPlan
 	Install(ctx context.Context, say Reporter) error
 
 	// Pull fetches a model.
@@ -82,7 +83,7 @@ func (o Options) runtime() EmbedRuntime {
 	if o.EmbedRuntime != nil {
 		return o.EmbedRuntime
 	}
-	return &ollamaRuntime{env: o.Env, client: o.HTTPClient}
+	return &ollamaRuntime{env: o.Env, client: o.HTTPClient, opts: &o}
 }
 
 // ------------------------------------------------------------------ ollama --
@@ -101,6 +102,10 @@ const ollamaDocs = "https://ollama.com/download"
 type ollamaRuntime struct {
 	env    detect.Env
 	client *http.Client
+	// opts carries the download seams — HTTP client, filesystem, launchctl —
+	// for the path where Relay installs Ollama itself rather than running
+	// somebody else's command.
+	opts *Options
 }
 
 func (r *ollamaRuntime) Name() string { return "Ollama" }
@@ -125,37 +130,80 @@ func (r *ollamaRuntime) Status(ctx context.Context) LocalStatus {
 	return st
 }
 
-// InstallCommand is the vendor's own documented install, and nothing else.
+// InstallPlan is the vendor's own install, and nothing else: their documented
+// command where there is one that runs on this machine, and their own published
+// build where there is not.
 //
-// Neither of these has been run by us on a real machine — the registry is not
-// reachable from the machine this was written on — so they are shown in full
-// and agreed to before they run, which is the same treatment the five agent
-// runtimes get in runtimes.go and the same reason: an unverified command that
-// the user reads and approves is safe, and a silent one is not.
-func (r *ollamaRuntime) InstallCommand() []string {
+// The commands have not been run by us on a real machine — the registry is not
+// reachable from the machine this was written on — so they are shown in full and
+// agreed to before they run, which is the same treatment the five agent runtimes
+// get in runtimes.go. The download path was measured: the archive, its checksum
+// file, and the unpacked binary all answered on 2026-08-14.
+func (r *ollamaRuntime) InstallPlan() InstallPlan {
 	switch r.env.GOOS {
 	case "darwin":
 		if r.has("brew") {
-			return []string{"brew", "install", "ollama"}
+			cmd := []string{"brew", "install", "ollama"}
+			return InstallPlan{Cmd: cmd, OK: true, Body: "Runs: " + strings.Join(cmd, " ")}
 		}
-		// The alternative on macOS is a .dmg a person drags into
-		// /Applications. Relay does not automate that, and pretending to would
-		// be worse than the sentence it prints instead.
-		return nil
+		// No Homebrew, which is the state of a Mac nobody has set up yet. The
+		// alternative used to be a sentence pointing at a .dmg somebody drags
+		// into /Applications. Relay downloads the tarball beside it instead.
+		if ollamaArchive(r.env.GOOS) == "" {
+			return InstallPlan{}
+		}
+		return InstallPlan{
+			OK: true,
+			Body: fmt.Sprintf("Downloads Ollama %s (%d MB) from ollama's own release, checks it "+
+				"against their published checksums, and unpacks it into ~/.local — no sudo, and "+
+				"nothing touches your shell profile. It is started now and at login.",
+				OllamaPin, OllamaDownloadMB),
+		}
 	case "linux":
 		if r.has("curl") {
-			return []string{"sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"}
+			cmd := []string{"sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"}
+			return InstallPlan{Cmd: cmd, OK: true, Body: "Runs: " + strings.Join(cmd, " ")}
 		}
+	}
+	return InstallPlan{}
+}
+
+// download is the no-package-manager path: fetch the vendor's own build,
+// verify it, and leave a server running that comes back after a reboot.
+func (r *ollamaRuntime) download(ctx context.Context, say Reporter) error {
+	if r.opts == nil {
+		return fmt.Errorf("install: no download seam wired for Ollama")
+	}
+	opts := *r.opts
+	archive := ollamaArchive(r.env.GOOS)
+	dir, err := installOllama(ctx, opts, archive)
+	if err != nil {
+		return err
+	}
+	say("  Ollama %s in %s.", OllamaPin, shortSource(dir, r.env.Home))
+	if err := serveOllama(ctx, opts, dir); err != nil {
+		// The binary is on the machine either way, and `ollama serve` in a
+		// terminal is a working answer, so this is reported rather than fatal.
+		say("  %s", wrapIndent("Installed, but it could not be started at login: "+
+			err.Error()+" Run `ollama serve` and it works for this session.", 2, 76))
 		return nil
+	}
+	if !waitForOllama(ctx, r, 30*time.Second) {
+		say("  %s", wrapIndent("Installed and registered, but the server has not answered yet. "+
+			"It may still be starting; `relay embed` picks up where this left off.", 2, 76))
 	}
 	return nil
 }
 
 func (r *ollamaRuntime) Install(ctx context.Context, say Reporter) error {
-	cmd := r.InstallCommand()
-	if len(cmd) == 0 {
-		return fmt.Errorf("install: no Ollama install command for %s; see %s", r.env.GOOS, ollamaDocs)
+	plan := r.InstallPlan()
+	if !plan.OK {
+		return fmt.Errorf("install: no way to install Ollama on %s; see %s", r.env.GOOS, ollamaDocs)
 	}
+	if len(plan.Cmd) == 0 {
+		return r.download(ctx, say)
+	}
+	cmd := plan.Cmd
 	if r.env.Exec == nil {
 		return fmt.Errorf("install: no way to run commands on this machine")
 	}
@@ -244,9 +292,12 @@ type FakeEmbedRuntime struct {
 	// mutate it, so a test drives the whole sequence by asserting on it.
 	State LocalStatus
 
-	// InstallCmd is what InstallCommand returns; nil means Relay has none for
+	// InstallCmd is what InstallPlan carries; nil means Relay has none for
 	// this machine, which is a case worth testing.
 	InstallCmd []string
+	// CanDownload makes a runtime with no command still installable, which is
+	// the Ollama-on-a-stock-Mac case.
+	CanDownload bool
 	// InstallErr and PullErr fail the corresponding call.
 	InstallErr error
 	PullErr    error
@@ -292,7 +343,12 @@ func (f *FakeEmbedRuntime) Status(context.Context) LocalStatus {
 	return f.State
 }
 
-func (f *FakeEmbedRuntime) InstallCommand() []string { return f.InstallCmd }
+func (f *FakeEmbedRuntime) InstallPlan() InstallPlan {
+	if len(f.InstallCmd) == 0 {
+		return InstallPlan{OK: f.CanDownload, Body: "Downloads it."}
+	}
+	return InstallPlan{Cmd: f.InstallCmd, OK: true, Body: "Runs: " + strings.Join(f.InstallCmd, " ")}
+}
 
 func (f *FakeEmbedRuntime) Install(_ context.Context, say Reporter) error {
 	f.Calls = append(f.Calls, "install")

@@ -844,7 +844,7 @@ func TestOllamaRuntimeUsesTheDocumentedCommands(t *testing.T) {
 		Home: home, GOOS: "linux"}
 	rt := (Options{Env: env, HTTPClient: happyProvider(t, nil)}).runtime()
 
-	cmd := rt.InstallCommand()
+	cmd := rt.InstallPlan().Cmd
 	if len(cmd) != 3 || cmd[0] != "sh" || !strings.Contains(cmd[2], "ollama.com/install.sh") {
 		t.Fatalf("install command = %v", cmd)
 	}
@@ -863,19 +863,32 @@ func TestOllamaRuntimeUsesTheDocumentedCommands(t *testing.T) {
 		t.Errorf("a model pull needs a generous timeout; got %s", ex.Calls[1].Timeout)
 	}
 
-	// No curl, no command — and no guess.
+	// No curl on Linux, no command — and no guess. Their archives are .tar.zst,
+	// which the standard library cannot read, so there is no download path here
+	// to fall back to either.
 	noCurl := env
 	noCurl.Exec = &detect.FakeExec{}
-	if got := (Options{Env: noCurl}).runtime().InstallCommand(); got != nil {
-		t.Errorf("install command without curl = %v, want none", got)
+	if plan := (Options{Env: noCurl}).runtime().InstallPlan(); plan.OK {
+		t.Errorf("install plan without curl = %+v, want none", plan)
 	}
-	// And macOS without Homebrew is the same: a sentence, not a .dmg automated
-	// behind somebody's back.
+	// macOS without Homebrew is NOT the same, and used to be: the step ended in
+	// a sentence pointing at a .dmg on the one machine this product is most
+	// often installed on. Ollama publishes a tarball and a checksum file beside
+	// that .dmg, which is the same deal Relay already takes from nodejs.org.
 	mac := env
 	mac.GOOS = "darwin"
 	mac.Exec = &detect.FakeExec{}
-	if got := (Options{Env: mac}).runtime().InstallCommand(); got != nil {
-		t.Errorf("install command on a bare mac = %v, want none", got)
+	plan := (Options{Env: mac}).runtime().InstallPlan()
+	if !plan.OK {
+		t.Fatal("a Mac with no Homebrew was left with no way to install Ollama")
+	}
+	if len(plan.Cmd) != 0 {
+		t.Errorf("plan.Cmd = %v, want the download rather than somebody's command", plan.Cmd)
+	}
+	for _, want := range []string{"checksums", "~/.local", "no sudo"} {
+		if !strings.Contains(plan.Body, want) {
+			t.Errorf("the download is agreed to without saying %q:\n%s", want, plan.Body)
+		}
 	}
 }
 

@@ -363,10 +363,10 @@ func askLocalModel(opts Options) (llm.EmbedModelEntry, error) {
 func provisionRuntime(ctx context.Context, opts Options, rt EmbedRuntime) (bool, error) {
 	p := opts.Prompt
 
-	cmd := rt.InstallCommand()
-	if len(cmd) == 0 {
+	plan := rt.InstallPlan()
+	if !plan.OK {
 		p.Say("  %s", wrapIndent(fmt.Sprintf(
-			"%s is not installed here and Relay has no install command it can run on this machine. "+
+			"%s is not installed here and Relay has no way to install it on this machine. "+
 				"Install it from %s and run `relay embed` — we do not ship a guessed command, "+
 				"because a wrong one is worse than none.", rt.Name(), rt.Docs()), 2, 76))
 		return false, nil
@@ -375,7 +375,7 @@ func provisionRuntime(ctx context.Context, opts Options, rt EmbedRuntime) (bool,
 	yes, err := p.Confirm(Confirm{
 		ID:      "embedding.local.install",
 		Prompt:  fmt.Sprintf("Install %s?", rt.Name()),
-		Body:    fmt.Sprintf("Runs: %s", strings.Join(cmd, " ")),
+		Body:    plan.Body,
 		Default: false,
 	})
 	if err != nil || !yes {
