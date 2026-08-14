@@ -154,6 +154,14 @@ func chooseModels(ctx context.Context, opts Options) (ModelsOutcome, error) {
 // to pick again rather than carrying a dead credential to the summary. See
 // repair.go.
 func verifyModel(ctx context.Context, opts Options, role, why, defaultModel string, prior *ModelChoice) (ModelChoice, error) {
+	// A rerun starts from what the last run left, tested rather than trusted.
+	// For a ChatGPT sign-in this is the difference between one keystroke and
+	// another device code.
+	if kept, ok, err := keptModel(ctx, opts, role); err != nil {
+		return kept, err
+	} else if ok {
+		return kept, nil
+	}
 	return verify(ctx, opts, repair[ModelChoice]{
 		ID:      "models." + role + ".repair",
 		Title:   strings.ToUpper(role[:1]) + role[1:] + " model — not working yet",

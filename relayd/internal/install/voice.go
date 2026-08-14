@@ -132,6 +132,13 @@ func chooseVoice(ctx context.Context, opts Options) (VoiceOutcome, error) {
 	p := opts.Prompt
 	out := VoiceOutcome{Fallback: voice.Fallback()}
 
+	// A rerun starts from what the last run left, tested rather than trusted.
+	if kept, ok, err := keptVoice(ctx, opts); err != nil {
+		return out, err
+	} else if ok {
+		return kept, nil
+	}
+
 	// The credential question can hand control back to the voice menu, which is
 	// where somebody who picked the wrong row finds out — the row is a name and
 	// the credential question is where it becomes a key they do not have.
