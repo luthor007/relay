@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -477,6 +478,7 @@ func TestClaudeCodeInstalledButNotSignedInStillGetsAGateway(t *testing.T) {
 	answers := baseAnswers()
 	answers["bus.ack"] = "yes"
 	answers["bus.install"] = "yes"
+	answers["bus.auth"] = "skip"
 	opts, script, _ := newOpts(t, answers, func(o *Options) {
 		busEnv(t, "v24.19.0", false)(o)
 		gw.attach(o)
@@ -499,11 +501,125 @@ func TestClaudeCodeInstalledButNotSignedInStillGetsAGateway(t *testing.T) {
 	if argv := argvOf(cmd); !strings.Contains(argv, "--auth-choice skip") {
 		t.Errorf("sent a choice that onboarding refuses:\n%s", argv)
 	}
-	// And it says what to do about it, naming the command that fixes it.
+	// And it says what to do about it, naming the commands that fix it.
 	out := script.Output()
-	if !strings.Contains(out, "not signed in") || !strings.Contains(out, "`claude`") {
-		t.Errorf("the user is not told how to give the Gateway a login:\n%s", out)
+	for _, want := range []string{"`claude`", "openclaw onboard"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the user is not told about %s:\n%s", want, out)
+		}
 	}
+}
+
+// Signing in during the step, rather than being told to do it afterwards.
+//
+// `claude` is an interactive login that Relay cannot drive through a pipe, so
+// the honest shape is: say the command, wait, then look at the one file that
+// decides it.
+func TestSigningInToClaudeDuringTheStepBindsTheRuntime(t *testing.T) {
+	gw := &busGateway{}
+	answers := baseAnswers()
+	answers["bus.ack"] = "yes"
+	answers["bus.install"] = "yes"
+	answers["bus.auth"] = "claude"
+	answers["bus.claude.login"] = "yes"
+
+	opts, script, _ := newOpts(t, answers, func(o *Options) {
+		busEnv(t, "v24.19.0", false)(o)
+		gw.attach(o)
+		o.Env.Exec.(*busExec).Hook = func(c detect.Cmd) {
+			if busVerb(c) == "onboard" {
+				gw.up = true
+			}
+		}
+		// The user goes to the other terminal and signs in: by the time they
+		// answer "Signed in?", the file is there.
+		o.Prompt = &loginScript{Script: o.Prompt.(*Script), onAsk: func() {
+			withClaudeCLILogin(t)(o)
+		}}
+	})
+	res, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, script.Output())
+	}
+	cmd, ok := busRan(busExecOf(t, opts), "onboard")
+	if !ok {
+		t.Fatal("the Gateway was never onboarded")
+	}
+	if argv := argvOf(cmd); !strings.Contains(argv, "--auth-choice anthropic-cli") {
+		t.Errorf("a login made during the step did not bind the runtime:\n%s", argv)
+	}
+	if res.Bus.AgentAuth != "anthropic-cli" {
+		t.Errorf("AgentAuth = %q, want the binding it just made", res.Bus.AgentAuth)
+	}
+}
+
+// Handing the Gateway a key Relay already holds — asked for, never assumed, and
+// carried in the environment rather than on a command line.
+func TestTheGatewayCanBeGivenTheKeyRelayAlreadyHas(t *testing.T) {
+	gw := &busGateway{}
+	answers := baseAnswers()
+	answers["bus.ack"] = "yes"
+	answers["bus.install"] = "yes"
+	answers["bus.auth"] = "key"
+	opts, script, _ := newOpts(t, answers, func(o *Options) {
+		busEnv(t, "v24.19.0", false)(o)
+		gw.attach(o)
+		o.Env.Exec.(*busExec).Hook = func(c detect.Cmd) {
+			if busVerb(c) == "onboard" {
+				gw.up = true
+			}
+		}
+	})
+	res, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, script.Output())
+	}
+
+	cmd, ok := busRan(busExecOf(t, opts), "onboard")
+	if !ok {
+		t.Fatal("the Gateway was never onboarded")
+	}
+	// Whatever the fixture's model credential resolves to is what should have
+	// been handed over — the point is that it is the same secret, carried the
+	// right way, not that it has any particular value.
+	secret := os.Getenv("OPENROUTER_API_KEY")
+	if secret == "" {
+		t.Fatal("the fixture has no OpenRouter key, so this proves nothing")
+	}
+	argv := argvOf(cmd)
+	if !strings.Contains(argv, "--auth-choice openrouter-api-key") {
+		t.Errorf("the key was agreed to and not used:\n%s", argv)
+	}
+	// argv is world-readable on Linux. The key goes in the environment.
+	if strings.Contains(argv, secret) {
+		t.Errorf("the key was put on a command line:\n%s", argv)
+	}
+	var carried bool
+	for _, e := range cmd.Env {
+		if e == "OPENROUTER_API_KEY="+secret {
+			carried = true
+		}
+	}
+	if !carried {
+		t.Errorf("the key never reached the child process: %v", cmd.Env)
+	}
+	if res.Bus.AgentAuth != "openrouter-api-key" {
+		t.Errorf("AgentAuth = %q", res.Bus.AgentAuth)
+	}
+}
+
+// loginScript runs a side effect when the sign-in question is asked, which is
+// what a user does: they go to another terminal and come back.
+type loginScript struct {
+	*Script
+	onAsk func()
+}
+
+func (l *loginScript) Confirm(c Confirm) (bool, error) {
+	if c.ID == "bus.claude.login" && l.onAsk != nil {
+		l.onAsk()
+	}
+	return l.Script.Confirm(c)
 }
 
 // busConfigured is the sole judge of whether onboarding worked, so the key it

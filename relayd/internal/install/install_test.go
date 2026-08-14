@@ -117,6 +117,11 @@ func fixtureEnv() (detect.Env, *detect.MemFS, *detect.FakeExec) {
 func baseAnswers() map[string]string {
 	return map[string]string{
 		"install.openclaw": "no",
+
+		// The Gateway's own model. "skip" in the fixture, so a test about
+		// anything else is not also a test about handing a key to OpenClaw —
+		// the cases that care set it explicitly.
+		"bus.auth":         "skip",
 		"install.hermes":   "no",
 		"install.opencode": "no",
 

@@ -203,7 +203,9 @@ type Result struct {
 	Voice    VoiceOutcome
 	Models   ModelsOutcome
 	// Bus is OpenClaw's Gateway, which runs the agent sessions.
-	Bus       BusOutcome
+	Bus BusOutcome
+	// ShellPath is what was done about ~/.local/bin not being on the user's PATH.
+	ShellPath ShellPathOutcome
 	Embedding EmbeddingOutcome
 	MCP       MCPOutcome
 	Service   ServiceOutcome
@@ -366,7 +368,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	// bus.go rule 2). It stays here because the model menu has just explained
 	// which plan powers which runtime, and the Gateway is the second consumer
 	// of that same answer.
-	bus, err := chooseBus(ctx, opts, rep)
+	bus, err := chooseBus(ctx, opts, rep, m)
 	if err != nil {
 		return res, err
 	}
@@ -478,6 +480,16 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		res.Warnings = append(res.Warnings, svc.Warnings...)
 		reportService(p, svc)
 	}
+
+	// 8b. And make it typeable. Everything above installed things into
+	// ~/.local/bin and then told the user to run them; this is where that stops
+	// being a lie on a machine whose shell has never looked there.
+	sp, err := offerShellPath(opts)
+	if err != nil {
+		return res, err
+	}
+	res.ShellPath = sp
+	res.Warnings = append(res.Warnings, sp.Warnings...)
 
 	// 9. The pairing code — before any long-running work.
 	code, err := PairingCode(opts.Rand)

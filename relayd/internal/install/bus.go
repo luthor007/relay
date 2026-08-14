@@ -223,7 +223,7 @@ const busAck = `The Gateway runs agents on this machine with your account's perm
 Anything reaching it can ask an agent to act. It listens on loopback only, and Relay pairs ` +
 	`your phone to itself rather than to it.`
 
-func chooseBus(ctx context.Context, opts Options, rep detect.Report) (BusOutcome, error) {
+func chooseBus(ctx context.Context, opts Options, rep detect.Report, models ModelsOutcome) (BusOutcome, error) {
 	p := opts.Prompt
 	var out BusOutcome
 
@@ -291,10 +291,15 @@ func chooseBus(ctx context.Context, opts Options, rep detect.Report) (BusOutcome
 		}
 	}
 
-	// 5. Configure it, without their wizard. What it is given is the machine's
-	// own Claude Code login, not Relay's key — see busOnboard.
+	// 5. Configure it, without their wizard. What it is given is decided by
+	// chooseBusAuth: the machine's own Claude Code login where there is one, a
+	// key the user hands over on purpose, or nothing.
 	cc, _ := rep.Get(adapter.ClaudeCode)
-	busOnboard(ctx, opts, cc.Installed, &out)
+	auth, err := chooseBusAuth(ctx, opts, cc.Installed, models)
+	if err != nil {
+		return out, err
+	}
+	busOnboard(ctx, opts, auth, &out)
 	if !out.Configured {
 		return out, nil
 	}
@@ -398,7 +403,7 @@ func claudeCLISignedIn(opts Options) bool {
 	return json.Unmarshal(b, &f) == nil && len(f.OAuth) > 0
 }
 
-func busOnboard(ctx context.Context, opts Options, claudeInstalled bool, out *BusOutcome) {
+func busOnboard(ctx context.Context, opts Options, auth busAuth, out *BusOutcome) {
 	args := []string{
 		"onboard", "--non-interactive", "--accept-risk",
 		"--flow", "quickstart",
@@ -417,13 +422,13 @@ func busOnboard(ctx context.Context, opts Options, claudeInstalled bool, out *Bu
 		args = append(args, "--install-daemon")
 	}
 	// `claude-cli` is rejected as deprecated; the live name is `anthropic-cli`.
-	auth := "skip"
-	if claudeCLISignedIn(opts) {
-		auth = "anthropic-cli"
-	}
-	args = append(args, "--auth-choice", auth)
+	// The key, where there is one, travels in the environment — argv is
+	// world-readable on Linux and a credential has no business in `ps`.
+	args = append(args, "--auth-choice", auth.Choice)
 
-	res, err := opts.Env.Exec.Run(ctx, busCmd(opts, args, 5*time.Minute))
+	cmd := busCmd(opts, args, 5*time.Minute)
+	cmd.Env = append(cmd.Env, auth.Env...)
+	res, err := opts.Env.Exec.Run(ctx, cmd)
 
 	// The exit code is not the question here, and believing it is cost a whole
 	// install: onboarding exits 1 from its own health phase having already
@@ -451,21 +456,16 @@ func busOnboard(ctx context.Context, opts Options, claudeInstalled bool, out *Bu
 		return
 	}
 	out.Configured = true
-	if auth != "skip" {
-		out.AgentAuth = auth
+	if auth.Choice != "skip" {
+		out.AgentAuth = auth.Choice
 	}
 	if out.AgentAuth == "" {
 		// Said here rather than left for the summary, because the next sentence
 		// on screen is "Gateway configured" and that would otherwise read as a
 		// Gateway that can run a session.
-		w := "the Gateway has no agent login yet, so it cannot run a session"
-		if claudeInstalled {
-			w += ": Claude Code is installed here but not signed in. Run `claude` once, " +
-				"then `relay setup` again and the Gateway picks it up"
-		} else {
-			w += ". Sign in to an agent runtime — `claude`, or `openclaw onboard` — " +
-				"and run `relay setup` again"
-		}
+		w := "the Gateway has no agent login yet, so it cannot run a session. Sign in to " +
+			"Claude Code with `claude`, or run `openclaw onboard` for anything else, and " +
+			"`relay setup` picks it up"
 		out.Warnings = append(out.Warnings, w)
 		opts.Prompt.Say("  %s", wrapIndent(w+".", 2, 76))
 	}
@@ -473,7 +473,11 @@ func busOnboard(ctx context.Context, opts Options, claudeInstalled bool, out *Bu
 	// health phases both passed, which is the only evidence of boot
 	// registration this step gets for free.
 	out.Registered = err == nil && res.Code == 0 && !opts.SkipService
-	opts.Prompt.Say("  Gateway configured, on loopback.")
+	if auth.Label != "" {
+		opts.Prompt.Say("  Gateway configured, on loopback, with %s.", auth.Label)
+	} else {
+		opts.Prompt.Say("  Gateway configured, on loopback.")
+	}
 }
 
 // busConfigured reports whether an OpenClaw here is already set up.
