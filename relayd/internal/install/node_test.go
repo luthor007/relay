@@ -194,3 +194,35 @@ func TestThePinnedNodeSatisfiesTheBus(t *testing.T) {
 		t.Fatalf("NodePin %s is outside the ranges OpenClaw accepts", NodePin)
 	}
 }
+
+// Installing Node is not the same as being able to use it.
+//
+// install.sh runs `$INSTALL_DIR/relay setup` by absolute path and warns, two
+// lines earlier, that $INSTALL_DIR is not on PATH — which on a fresh Mac mini it
+// is not. So the bootstrap would link node into ~/.local/bin, look for `node` on
+// a PATH without it, and report failure about a Node it had just installed
+// successfully. Everything after — npm for the runtimes, npm for OpenClaw,
+// openclaw itself — resolves through that same PATH.
+func TestTheInstalledNodeIsPutOnThisProcessPath(t *testing.T) {
+	archive := nodeArchive("darwin", "arm64")
+	root := strings.TrimSuffix(archive, ".tar.gz")
+	opts := nodeOpts(t, nodeServer(t, archive, fakeNodeTar(t, root), ""))
+
+	bin := filepath.Join(opts.Env.Home, ".local", "bin")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	if _, err := installNode(context.Background(), opts, archive); err != nil {
+		t.Fatal(err)
+	}
+	if !pathHas(os.Getenv("PATH"), bin) {
+		t.Fatalf("PATH is %q, without the directory node was just installed into (%s)",
+			os.Getenv("PATH"), bin)
+	}
+	// And exactly once, however many times it runs.
+	before := os.Getenv("PATH")
+	if _, err := installNode(context.Background(), opts, archive); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("PATH") != before {
+		t.Errorf("PATH grew a duplicate entry: %q", os.Getenv("PATH"))
+	}
+}

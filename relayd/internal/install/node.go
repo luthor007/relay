@@ -198,7 +198,35 @@ func installNode(ctx context.Context, opts Options, archive string) (string, err
 			return "", fmt.Errorf("could not link %s: %w", name, err)
 		}
 	}
+
+	// And make it visible to THIS process, which is the whole difference
+	// between installing Node and being able to use it.
+	//
+	// install.sh runs `$INSTALL_DIR/relay setup` by absolute path, and warns
+	// two lines earlier that $INSTALL_DIR is not on PATH — which on a fresh Mac
+	// mini it is not. So setup would symlink node into ~/.local/bin, look for
+	// `node` on a PATH that does not contain it, and report "installed, but
+	// node still does not answer" about a Node it had just installed
+	// successfully. Every step after this one — npm for the runtimes, npm for
+	// OpenClaw, openclaw itself — resolves through the same PATH.
+	//
+	// Scoped to this process and its children, which is exactly the blast
+	// radius wanted: nothing is written to a shell profile, and the next login
+	// is unaffected.
+	if path := os.Getenv("PATH"); !pathHas(path, bin) {
+		_ = os.Setenv("PATH", bin+string(os.PathListSeparator)+path)
+	}
 	return final, nil
+}
+
+// pathHas reports whether dir is already an entry in a PATH value.
+func pathHas(path, dir string) bool {
+	for _, p := range filepath.SplitList(path) {
+		if p == dir {
+			return true
+		}
+	}
+	return false
 }
 
 // nodeChecksum reads the published sum for one archive.
