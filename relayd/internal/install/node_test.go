@@ -226,3 +226,45 @@ func TestTheInstalledNodeIsPutOnThisProcessPath(t *testing.T) {
 		t.Errorf("PATH grew a duplicate entry: %q", os.Getenv("PATH"))
 	}
 }
+
+// The case a v0.2.0 machine is in: Relay downloaded Node on a previous run, and
+// it is on disk, correct, and invisible — because nothing puts ~/.local/bin on
+// PATH and setup is invoked by absolute path. Re-downloading 50MB to arrive at
+// the same file is the wrong answer to "is there a usable Node".
+func TestAPreviouslyInstalledNodeIsAdoptedRatherThanRefetched(t *testing.T) {
+	archive := nodeArchive("darwin", "arm64")
+	root := strings.TrimSuffix(archive, ".tar.gz")
+
+	var fetches int
+	counting := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		fetches++
+		return nodeServer(t, archive, fakeNodeTar(t, root), "").Transport.RoundTrip(r)
+	})}
+	// The real executor, because this test is about whether a symlinked node
+	// actually answers — which a FakeExec cannot tell us, it having never run
+	// anything. The tarball's bin/node is a shell script that prints a version.
+	opts := nodeOpts(t, counting)
+	opts.Env.Exec = detect.OS().Exec
+
+	// First run: nothing here, so it downloads.
+	t.Setenv("PATH", "/usr/bin:/bin")
+	if _, err := installNode(context.Background(), opts, archive); err != nil {
+		t.Fatal(err)
+	}
+	after := fetches
+	if after == 0 {
+		t.Fatal("the first run fetched nothing")
+	}
+
+	// Second run, in a process that cannot see it: adopted, not refetched.
+	t.Setenv("PATH", "/usr/bin:/bin")
+	if !adoptLocalNode(context.Background(), opts) {
+		t.Fatal("a Node already on disk was not adopted")
+	}
+	if fetches != after {
+		t.Errorf("made %d more requests adopting a Node that was already here", fetches-after)
+	}
+	if !pathHas(os.Getenv("PATH"), filepath.Join(opts.Env.Home, ".local", "bin")) {
+		t.Error("adopting it did not make it visible")
+	}
+}

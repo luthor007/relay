@@ -85,6 +85,14 @@ func ensureNode(ctx context.Context, opts Options, why string) (bool, error) {
 	if v, ok := nodeVersion(ctx, opts); ok && nodeOK(v) {
 		return true, nil
 	}
+	// A Node this installer put here on an earlier run is still here, and is
+	// invisible for exactly the reason it was invisible the first time: nothing
+	// puts ~/.local/bin on PATH, and setup is usually invoked by absolute path.
+	// Downloading 50MB again to arrive at the same file would be the wrong
+	// answer to "is there a usable Node", so look before fetching.
+	if adoptLocalNode(ctx, opts) {
+		return true, nil
+	}
 	// Asked once per run. A second step finding Node still missing means the
 	// user already declined, and asking again is nagging.
 	if opts.nodeAsked() {
@@ -136,6 +144,36 @@ func ensureNode(ctx context.Context, opts Options, why string) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// adoptLocalNode reports whether a Node this installer previously unpacked is
+// on disk, and if so makes it visible to this process.
+func adoptLocalNode(ctx context.Context, opts Options) bool {
+	home := opts.Env.Home
+	if home == "" {
+		var err error
+		if home, err = os.UserHomeDir(); err != nil {
+			return false
+		}
+	}
+	bin := filepath.Join(home, ".local", "bin")
+	if _, err := os.Stat(filepath.Join(bin, "node")); err != nil {
+		return false
+	}
+	path := os.Getenv("PATH")
+	if pathHas(path, bin) {
+		// Already on PATH and still not answering, so it is broken rather than
+		// hidden — and re-adding the same directory would not change that.
+		return false
+	}
+	_ = os.Setenv("PATH", bin+string(os.PathListSeparator)+path)
+
+	v, ok := nodeVersion(ctx, opts)
+	if !ok || !nodeOK(v) {
+		return false
+	}
+	opts.Prompt.Say("  Node %s, already installed here by Relay.", v)
+	return true
 }
 
 // installNode downloads, verifies and unpacks. It returns where Node landed.
