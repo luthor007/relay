@@ -100,9 +100,19 @@ const (
 	BudgetModelDefault = "deepseek/deepseek-v4-pro-0813"
 	RecommendedVendor  = "openrouter"
 	// CodexModelDefault is what the subscription endpoint serves. It is not the
-	// same catalog as the API — asking it for a platform model id is a 404, so
-	// the Codex rows carry their own default rather than inheriting one.
-	CodexModelDefault = "gpt-5.6-codex"
+	// same catalog as the API — the two overlap by name and not by contents:
+	//
+	//	http 400: {"detail":"The 'gpt-5.6-codex' model is not supported
+	//	           when using Codex with a ChatGPT account."}
+	//
+	// which is what this constant used to be, so the ChatGPT rows prefilled a
+	// model id that could never work and the installer offered to fix a
+	// credential that was fine. Measured against a live ChatGPT Plus account:
+	// gpt-5.6-sol and gpt-5.6-luna answer, and gpt-5.6, gpt-5.6-codex,
+	// gpt-5.6-codex-mini, gpt-5.6-luna-mini, gpt-5.6-luna-max and
+	// codex-mini-latest are all refused by name. This is the one the Codex CLI
+	// itself runs.
+	CodexModelDefault = "gpt-5.6-sol"
 )
 
 // Vendors returns the grouped vendor list, OpenRouter first because it is

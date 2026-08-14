@@ -23,8 +23,18 @@ import (
 //
 //   - it streams. A non-streaming request is refused, so [codexProvider.Complete]
 //     streams and reassembles. Nothing above this file needs to know.
-//   - max_output_tokens has a floor of 16. The probe asks for one token, which
-//     would be a 400 that reads like a broken credential, so it is clamped.
+//
+//   - it takes a fixed set of parameters and refuses the rest by name. This wire
+//     used to send max_output_tokens clamped to a floor of 16, a floor invented
+//     here and asserted against a test server, which is why it survived until a
+//     real subscription answered:
+//
+//     http 400: {"detail":"Unsupported parameter: max_output_tokens"}
+//
+//     So neither max_output_tokens nor temperature is sent — the same two the
+//     Codex CLI omits. A caller's Request may carry them; against this endpoint
+//     they are dropped rather than turned into a 400 that reads like a broken
+//     credential.
 type codexProvider struct {
 	cfg Config
 }
@@ -34,9 +44,6 @@ var _ Provider = (*codexProvider)(nil)
 func (p *codexProvider) Vendor() string { return p.cfg.Vendor }
 func (p *codexProvider) Model() string  { return p.cfg.Model }
 func (p *codexProvider) API() API       { return APICodex }
-
-// codexMinOutputTokens is the endpoint's floor.
-const codexMinOutputTokens = 16
 
 type codexContent struct {
 	Type string `json:"type"`
@@ -91,14 +98,12 @@ type codexRequest struct {
 	Stream bool `json:"stream"`
 	// Store is always false. Relay is not building a thread on OpenAI's side,
 	// and an account with retention disabled rejects the request otherwise.
-	Store           bool             `json:"store"`
-	MaxOutputTokens int              `json:"max_output_tokens,omitempty"`
-	Temperature     *float64         `json:"temperature,omitempty"`
-	Tools           []codexTool      `json:"tools,omitempty"`
-	ToolChoice      any              `json:"tool_choice,omitempty"`
-	Parallel        *bool            `json:"parallel_tool_calls,omitempty"`
-	Reasoning       *codexReasoning  `json:"reasoning,omitempty"`
-	Text            *codexTextFormat `json:"text,omitempty"`
+	Store      bool             `json:"store"`
+	Tools      []codexTool      `json:"tools,omitempty"`
+	ToolChoice any              `json:"tool_choice,omitempty"`
+	Parallel   *bool            `json:"parallel_tool_calls,omitempty"`
+	Reasoning  *codexReasoning  `json:"reasoning,omitempty"`
+	Text       *codexTextFormat `json:"text,omitempty"`
 }
 
 func (p *codexProvider) body(req Request) codexRequest {
@@ -144,21 +149,14 @@ func (p *codexProvider) body(req Request) codexRequest {
 		})
 	}
 
-	max := req.MaxTokens
-	if max > 0 && max < codexMinOutputTokens {
-		max = codexMinOutputTokens
-	}
-
 	body := codexRequest{
-		Model:           model,
-		Instructions:    req.System,
-		Input:           items,
-		Stream:          true,
-		Store:           false,
-		MaxOutputTokens: max,
-		Temperature:     req.Temperature,
-		Tools:           codexTools(req.Tools),
-		ToolChoice:      codexChoice(req.ToolChoice),
+		Model:        model,
+		Instructions: req.System,
+		Input:        items,
+		Stream:       true,
+		Store:        false,
+		Tools:        codexTools(req.Tools),
+		ToolChoice:   codexChoice(req.ToolChoice),
 	}
 	if req.ToolChoice != nil && req.ToolChoice.DisableParallel {
 		off := false

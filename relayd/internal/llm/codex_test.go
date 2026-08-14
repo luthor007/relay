@@ -205,14 +205,9 @@ func TestCodexProviderCallsTheSubscriptionEndpoint(t *testing.T) {
 	if err := json.Unmarshal([]byte(tr.seenRaw[0]), &sent); err != nil {
 		t.Fatal(err)
 	}
-	// The endpoint refuses a non-streaming request, and floors output tokens at
-	// 16 — the probe asks for one, which would be a 400 that reads like a bad
-	// credential and is not one.
+	// The endpoint refuses a non-streaming request.
 	if sent["stream"] != true {
 		t.Error("the Codex endpoint only answers streaming requests")
-	}
-	if got := sent["max_output_tokens"]; got != float64(16) {
-		t.Errorf("max_output_tokens = %v, want the endpoint's floor", got)
 	}
 	if _, ok := sent["messages"]; ok {
 		t.Error("Responses takes input items, not messages")
@@ -265,5 +260,55 @@ func TestChatGPTRowsCarryTheirOwnEndpoint(t *testing.T) {
 	// on the headless box this product is installed on.
 	if subscription != 2 {
 		t.Errorf("found %d ChatGPT rows, want the browser and device-code pair", subscription)
+	}
+}
+
+// The endpoint refuses parameters by name, and the probe is where that lands.
+//
+// From a real sign-in, on the first call after "Signed in as ... (plus)":
+//
+//	OpenAI gpt-5.6-luna: unavailable — http 400:
+//	{"detail":"Unsupported parameter: max_output_tokens"}
+//
+// The installer then offered to fix a credential that was working perfectly.
+// The probe asks for one token and every caller may set a temperature, so both
+// have to be dropped here rather than refused there.
+func TestTheCodexWireSendsNoParameterTheEndpointRefuses(t *testing.T) {
+	access := codexToken(t, "a@b.c", "plus", "acct-42", time.Now().Add(time.Hour))
+	tr := &stubTransport{
+		status: 200,
+		ctype:  "text/event-stream",
+		body: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"model\":\"gpt-5.6-codex\"," +
+			"\"status\":\"completed\",\"usage\":{\"input_tokens\":3,\"output_tokens\":1}}}\n\n",
+	}
+
+	p, err := llm.New(llm.Config{
+		Vendor: "openai", API: llm.APICodex, BaseURL: llm.CodexBaseURL,
+		Model: llm.CodexModelDefault, HTTPClient: client(tr),
+		Credential: llm.CredentialRef{Kind: llm.RefInline, Value: access},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	temp := 0.2
+	if _, err := p.Complete(context.Background(), llm.Request{
+		Messages: []llm.Message{{Role: llm.RoleUser, Text: "ping"}},
+		// Exactly what the probe sends, plus the other parameter this endpoint
+		// names when it refuses.
+		MaxTokens: 1, Temperature: &temp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var sent map[string]any
+	if err := json.Unmarshal([]byte(tr.seenRaw[0]), &sent); err != nil {
+		t.Fatal(err)
+	}
+	for _, param := range []string{"max_output_tokens", "temperature"} {
+		if v, ok := sent[param]; ok {
+			t.Errorf("sent %s=%v; the subscription endpoint answers that with a 400 "+
+				"that reads like a broken credential", param, v)
+		}
 	}
 }
