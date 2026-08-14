@@ -132,6 +132,11 @@ func chooseVoice(ctx context.Context, opts Options) (VoiceOutcome, error) {
 	p := opts.Prompt
 	out := VoiceOutcome{Fallback: voice.Fallback()}
 
+	// The credential question can hand control back to the voice menu, which is
+	// where somebody who picked the wrong row finds out — the row is a name and
+	// the credential question is where it becomes a key they do not have.
+restart:
+
 	// One line per row, not two.
 	//
 	// Every row used to print quality · latency · cost and then a sentence
@@ -184,7 +189,11 @@ func chooseVoice(ctx context.Context, opts Options) (VoiceOutcome, error) {
 			Prompt:   "Local endpoint",
 			Body:     "e.g. http://127.0.0.1:8080/v1",
 			Optional: true,
+			Back:     true,
 		})
+		if errors.Is(err, ErrBack) {
+			goto restart
+		}
 		if err != nil {
 			return out, err
 		}
@@ -199,8 +208,11 @@ func chooseVoice(ctx context.Context, opts Options) (VoiceOutcome, error) {
 			EnvHint:   strings.ToUpper(opt.Vendor) + "_API_KEY",
 			Optional:  true,
 			SkipLabel: "Skip — use the keyless voice for now",
+			Back:      true,
 		})
 		switch {
+		case errors.Is(err, ErrBack):
+			goto restart
 		case errors.Is(err, errCredentialSkipped):
 			p.Say("  Using %s instead. `relay voice` adds a key later.", out.Fallback.Label)
 			out.Option = out.Fallback

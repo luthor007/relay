@@ -34,6 +34,9 @@ type CredentialAsk struct {
 	Optional bool
 	// SkipLabel is the wording of the skip row.
 	SkipLabel string
+	// Back offers a way back to the question before this one. Only a caller
+	// that can unwind sets it. See [ErrBack].
+	Back bool
 }
 
 // maxCredentialAttempts caps the preflight retry loop. Three goes is enough for
@@ -85,6 +88,7 @@ func askCredential(ctx context.Context, opts Options, ask CredentialAsk) (llm.Cr
 			Body:    "Relay stores a reference, not the key.",
 			Choices: choices,
 			Default: "env",
+			Back:    ask.Back,
 		})
 		if err != nil {
 			return llm.CredentialRef{}, err

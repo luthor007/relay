@@ -142,12 +142,41 @@ type Options struct {
 	// finding Node still missing means the user already said no.
 	nodeAsk *bool
 
+	// codexRun remembers a ChatGPT sign-in this run performed, so the second
+	// model does not ask for a second one. Signing in is the slowest thing in
+	// the whole install — a code typed on a phone, a browser round trip — and
+	// asking twice for the same account is asking the user to do the slow part
+	// again to arrive where they already are. Pointer for the same reason as
+	// nodeAsk.
+	codexRun *codexMemory
+
 	Now  func() time.Time
 	Rand io.Reader
 	Log  *slog.Logger
 }
 
 func (o Options) nodeAsked() bool { return o.nodeAsk != nil && *o.nodeAsk }
+
+// codexMemory is one ChatGPT login, held for the length of a run.
+type codexMemory struct {
+	out codexOutcome
+	ok  bool
+}
+
+// rememberCodex records a sign-in so later questions can offer it.
+func (o Options) rememberCodex(out codexOutcome) {
+	if o.codexRun != nil {
+		o.codexRun.out, o.codexRun.ok = out, true
+	}
+}
+
+// recallCodex returns the sign-in this run already performed, if any.
+func (o Options) recallCodex() (codexOutcome, bool) {
+	if o.codexRun == nil || !o.codexRun.ok {
+		return codexOutcome{}, false
+	}
+	return o.codexRun.out, true
+}
 
 func (o Options) markNodeAsked() {
 	if o.nodeAsk != nil {
@@ -477,6 +506,9 @@ func (o Options) withDefaults() Options {
 	if o.nodeAsk == nil {
 		asked := false
 		o.nodeAsk = &asked
+	}
+	if o.codexRun == nil {
+		o.codexRun = &codexMemory{}
 	}
 	if o.Now == nil {
 		o.Now = time.Now

@@ -63,7 +63,9 @@ type ModelChoice struct {
 	Model  config.Model
 	Probe  llm.ProbeResult
 	// Probed is false when nothing could be called at all.
-	Probed   bool
+	Probed bool
+	// Account is who a subscription sign-in signed in as, when there was one.
+	Account  string
 	Warnings []string
 }
 
@@ -109,21 +111,32 @@ func chooseModels(ctx context.Context, opts Options) (ModelsOutcome, error) {
 	// chosen. See llm.Vendors.
 	p.Section("Choose the models", modelsPreamble)
 
-	small, err := verifyModel(ctx, opts, "small",
-		"The voice — fast and cheap. It speaks, narrates progress from structured events, and "+
-			"never invents a specific it was not told.", llm.SmallModelDefault, nil)
-	if err != nil {
-		return out, err
+	var small, big ModelChoice
+	// Going back from the big model's first question means going back to the
+	// small one, which is a whole model earlier and the only place "back" can
+	// mean from there.
+	for {
+		var err error
+		small, err = verifyModel(ctx, opts, "small",
+			"The voice — fast and cheap. It speaks, narrates progress from structured events, and "+
+				"never invents a specific it was not told.", llm.SmallModelDefault, nil)
+		if err != nil {
+			return out, err
+		}
+
+		big, err = verifyModel(ctx, opts, "big",
+			"The work — the strongest one available. It routes, holds the MCP registry and a shell, "+
+				"and writes to memory.", llm.BigModelDefault, &small)
+		if errors.Is(err, ErrBack) {
+			continue
+		}
+		if err != nil {
+			return out, err
+		}
+		break
 	}
 	out.Small = small
 	out.Warnings = append(out.Warnings, small.Warnings...)
-
-	big, err := verifyModel(ctx, opts, "big",
-		"The work — the strongest one available. It routes, holds the MCP registry and a shell, "+
-			"and writes to memory.", llm.BigModelDefault, &small)
-	if err != nil {
-		return out, err
-	}
 	out.Big = big
 	out.Warnings = append(out.Warnings, big.Warnings...)
 
@@ -170,199 +183,316 @@ func verifyModel(ctx context.Context, opts Options, role, why, defaultModel stri
 	})
 }
 
-// chooseModel runs the two-level menu for one role. prior is the model already
+// The questions one model role asks, in order. A wrong turn three questions ago
+// used to cost the whole step — there was no way back from "I picked ChatGPT
+// and meant OpenRouter" except finishing the model and running `relay models`
+// again. Each stage below can hand control back to the one before it, skipping
+// the ones that do not apply to the vendor in hand.
+const (
+	stageVendor = iota
+	stageAuth
+	stageCustom
+	stageLogin
+	stageModelID
+	stageCredential
+	stageDone
+)
+
+// chooseModel runs the menu for one role. prior is the model already
 // configured, so the second role can reuse one key when the vendor matches —
 // which is the whole reason OpenRouter is the recommendation.
 func chooseModel(ctx context.Context, opts Options, role, why, defaultModel string, prior *ModelChoice) (ModelChoice, error) {
 	p := opts.Prompt
 	choice := ModelChoice{Role: role}
 
-	// Level one: vendor groups.
-	var vendorChoices []Choice
-	for _, v := range llm.Vendors() {
-		vendorChoices = append(vendorChoices, Choice{
-			ID: v.ID, Label: v.Label, Hint: v.Hint,
-			Recommended: v.Recommended, Last: v.Custom,
-		})
+	var (
+		vendor   llm.VendorEntry
+		auth     llm.Auth
+		cfgModel config.Model
+	)
+
+	// applies reports whether a stage asks anything for this vendor and auth
+	// method. Going back has to skip the questions that were never asked, or
+	// "back" from the model id on a one-auth vendor would land on a menu that
+	// never appeared.
+	applies := func(stage int) bool {
+		switch stage {
+		case stageAuth:
+			return len(vendor.Auths) > 1
+		case stageCustom:
+			return vendor.Custom
+		case stageLogin:
+			return auth.Kind != llm.AuthAPIKey && auth.Ref == ""
+		}
+		return true
 	}
-	vendorID, err := p.Select(Question{
-		ID:      "models." + role + ".vendor",
-		Title:   strings.ToUpper(role[:1]) + role[1:] + " model",
-		Body:    why,
-		Choices: vendorChoices,
-		Default: llm.RecommendedVendor,
-	})
-	if err != nil {
-		return choice, err
-	}
-	vendor, ok := llm.Vendor(vendorID)
-	if !ok {
-		return choice, fmt.Errorf("install: unknown vendor %q", vendorID)
-	}
-	choice.Vendor = vendor
-	if vendor.Note != "" {
-		p.Say("\n  %s", wrapIndent(vendor.Note, 2, 76))
+	back := func(from int) int {
+		for s := from - 1; s > stageVendor; s-- {
+			if applies(s) {
+				return s
+			}
+		}
+		return stageVendor
 	}
 
-	// Level two: the auth methods behind that group.
-	auth := llm.Auth{}
-	switch len(vendor.Auths) {
-	case 0:
-		return choice, fmt.Errorf("install: vendor %q has no auth methods", vendorID)
-	case 1:
-		auth = vendor.Auths[0]
-	default:
-		var authChoices []Choice
-		for _, a := range vendor.Auths {
-			authChoices = append(authChoices, Choice{
-				ID: a.ID, Label: a.Label, Hint: authHint(a), Risk: a.Risk,
+	for stage := stageVendor; stage != stageDone; {
+		switch stage {
+		case stageVendor:
+			var vendorChoices []Choice
+			for _, v := range llm.Vendors() {
+				vendorChoices = append(vendorChoices, Choice{
+					ID: v.ID, Label: v.Label, Hint: v.Hint,
+					Recommended: v.Recommended, Last: v.Custom,
+				})
+			}
+			vendorID, err := p.Select(Question{
+				ID:      "models." + role + ".vendor",
+				Title:   strings.ToUpper(role[:1]) + role[1:] + " model",
+				Body:    why,
+				Choices: vendorChoices,
+				Default: llm.RecommendedVendor,
+				// The first question of the first model has nothing behind it
+				// in this step. The second model does: the one before it.
+				Back: prior != nil,
 			})
-		}
-		authID, err := p.Select(Question{
-			ID:      "models." + role + ".auth",
-			Title:   vendor.Label,
-			Body:    "How do you want to authenticate?",
-			Choices: authChoices,
-			Default: vendor.Auths[0].ID,
-		})
-		if err != nil {
-			return choice, err
-		}
-		for _, a := range vendor.Auths {
-			if a.ID == authID {
-				auth = a
-			}
-		}
-	}
-	choice.Auth = auth
-
-	cfgModel := config.Model{Vendor: vendor.ID, API: string(vendor.API)}
-
-	// The custom provider needs a base URL and a wire shape.
-	if vendor.Custom {
-		base, err := p.Input(Input{
-			ID: "models." + role + ".base_url", Prompt: "Base URL",
-			Body: "Anything OpenAI-compatible or Anthropic-compatible.",
-		})
-		if err != nil {
-			return choice, err
-		}
-		cfgModel.BaseURL = base
-
-		shape, err := p.Select(Question{
-			ID: "models." + role + ".api", Title: "Which shape does it speak?",
-			Choices: []Choice{
-				{ID: "auto", Label: "Auto-detect", Hint: "try OpenAI-compatible first, then Anthropic"},
-				{ID: string(llm.APIOpenAI), Label: "OpenAI-compatible"},
-				{ID: string(llm.APIAnthropic), Label: "Anthropic-compatible"},
-			},
-			Default: "auto",
-		})
-		if err != nil {
-			return choice, err
-		}
-		cfgModel.API = shape
-	}
-
-	// An auth method may reach a different endpoint than its vendor's. The
-	// ChatGPT rows do: a subscription is only spendable at chatgpt.com, which
-	// speaks a different wire than api.openai.com, and probing the credential
-	// against the vendor's own base URL would report a working login as a bad
-	// one.
-	if auth.BaseURL != "" {
-		cfgModel.BaseURL = auth.BaseURL
-	}
-	if auth.API != "" {
-		cfgModel.API = string(auth.API)
-	}
-
-	// A subscription, OAuth or device-code row that Relay can perform, it
-	// performs — see codex.go. What it will not do is walk the user through
-	// somebody else's login and then ask which environment variable holds the
-	// key, because for a subscription there is no key to hold.
-	if auth.Kind != llm.AuthAPIKey && auth.Ref == "" {
-		body := fmt.Sprintf("%s is %s's own login, not ours. Run it in another terminal now — "+
-			"on a headless box this is the slow part of setup, and it is one device-code flow "+
-			"at a time.", auth.Label, vendor.Label)
-		if cmd, ok := loginCommands[auth.ID]; ok {
-			body += fmt.Sprintf("\n\n    %s\n", cmd)
-		} else {
-			body += "\n\nRelay does not ship the exact command for this one, because a wrong " +
-				"command is worse than none. Use the vendor's documented login."
-		}
-		body += "\nThen tell Relay how to reach the credential it leaves behind — usually an " +
-			"environment variable or a file it writes."
-		if _, err := p.Confirm(Confirm{
-			ID: "models." + role + ".login", Prompt: "Signed in?", Body: body, Default: true,
-		}); err != nil {
-			return choice, err
-		}
-	}
-
-	// Model id. An auth method that serves its own catalog names its own
-	// default: the subscription endpoint does not answer to platform model ids,
-	// so inheriting the vendor's would be a 404 dressed up as a bad login.
-	modelDefault := defaultModelFor(vendor, defaultModel)
-	if auth.Model != "" {
-		modelDefault = auth.Model
-	}
-	// The budget alternative is named on the question that decides the bill,
-	// and only for the role where the bill is decided. It is one line, and it
-	// is not a menu: the default is a real recommendation, and this is the one
-	// fact a user needs to overrule it on purpose rather than by accident.
-	var modelBody string
-	if role == "big" && modelDefault == llm.BigModelDefault {
-		modelBody = "Cheaper: " + llm.BudgetModelDefault + " — about 6× less, and not far behind."
-	}
-	modelID, err := p.Input(Input{
-		ID: "models." + role + ".model", Prompt: "Model id",
-		Body: modelBody, Default: modelDefault,
-	})
-	if err != nil {
-		return choice, err
-	}
-	cfgModel.Model = modelID
-
-	// Credential. One key covers both models when the vendor matches, which is
-	// exactly the OpenRouter argument, so offer it rather than asking twice.
-	reused := false
-	if prior != nil && prior.Vendor.ID == vendor.ID && prior.Model.Credential != "" {
-		yes, err := p.Confirm(Confirm{
-			ID:      "models." + role + ".reuse",
-			Prompt:  fmt.Sprintf("Use the same %s credential as the %s model?", vendor.Label, prior.Role),
-			Default: true,
-		})
-		if err != nil {
-			return choice, err
-		}
-		if yes {
-			cfgModel.Credential = prior.Model.Credential
-			reused = true
-		}
-	}
-	if !reused {
-		// A subscription row does not end in a credential question. It ends in
-		// a sign-in, or in reading the one this machine already has.
-		if auth.Ref == llm.RefCodex {
-			out, err := chooseCodexCredential(ctx, opts, "models."+role+".chatgpt", auth)
-			switch {
-			case errors.Is(err, errCredentialSkipped):
-				choice.Warnings = append(choice.Warnings,
-					fmt.Sprintf("the %s model has no ChatGPT login, so the orchestrator cannot use it yet", role))
-			case err != nil:
+			if err != nil {
 				return choice, err
-			default:
-				cfgModel.Credential = out.Ref.String()
-				p.Say("  Signed in as %s.", out.Account)
 			}
-		} else {
+			v, ok := llm.Vendor(vendorID)
+			if !ok {
+				return choice, fmt.Errorf("install: unknown vendor %q", vendorID)
+			}
+			vendor, choice.Vendor = v, v
+			if vendor.Note != "" {
+				p.Say("\n  %s", wrapIndent(vendor.Note, 2, 76))
+			}
+			if len(vendor.Auths) == 0 {
+				return choice, fmt.Errorf("install: vendor %q has no auth methods", vendorID)
+			}
+			auth = vendor.Auths[0]
+			stage++
+
+		case stageAuth:
+			if !applies(stage) {
+				stage++
+				continue
+			}
+			var authChoices []Choice
+			for _, a := range vendor.Auths {
+				authChoices = append(authChoices, Choice{
+					ID: a.ID, Label: a.Label, Hint: authHint(a), Risk: a.Risk,
+				})
+			}
+			authID, err := p.Select(Question{
+				ID:      "models." + role + ".auth",
+				Title:   vendor.Label,
+				Body:    "How do you want to authenticate?",
+				Choices: authChoices,
+				Default: vendor.Auths[0].ID,
+				Back:    true,
+			})
+			if errors.Is(err, ErrBack) {
+				stage = back(stage)
+				continue
+			}
+			if err != nil {
+				return choice, err
+			}
+			for _, a := range vendor.Auths {
+				if a.ID == authID {
+					auth = a
+				}
+			}
+			stage++
+
+		case stageCustom:
+			// An auth method may reach a different endpoint than its vendor's.
+			// The ChatGPT rows do: a subscription is only spendable at
+			// chatgpt.com, which speaks a different wire than api.openai.com,
+			// and probing the credential against the vendor's own base URL
+			// would report a working login as a bad one.
+			cfgModel = config.Model{Vendor: vendor.ID, API: string(vendor.API)}
+			if auth.BaseURL != "" {
+				cfgModel.BaseURL = auth.BaseURL
+			}
+			if auth.API != "" {
+				cfgModel.API = string(auth.API)
+			}
+			choice.Auth = auth
+			if !applies(stage) {
+				stage++
+				continue
+			}
+			base, err := p.Input(Input{
+				ID: "models." + role + ".base_url", Prompt: "Base URL",
+				Body: "Anything OpenAI-compatible or Anthropic-compatible.",
+				Back: true,
+			})
+			if errors.Is(err, ErrBack) {
+				stage = back(stage)
+				continue
+			}
+			if err != nil {
+				return choice, err
+			}
+			cfgModel.BaseURL = base
+
+			shape, err := p.Select(Question{
+				ID: "models." + role + ".api", Title: "Which shape does it speak?",
+				Choices: []Choice{
+					{ID: "auto", Label: "Auto-detect", Hint: "try OpenAI-compatible first, then Anthropic"},
+					{ID: string(llm.APIOpenAI), Label: "OpenAI-compatible"},
+					{ID: string(llm.APIAnthropic), Label: "Anthropic-compatible"},
+				},
+				Default: "auto",
+				Back:    true,
+			})
+			if errors.Is(err, ErrBack) {
+				continue // back to the base URL, one question up in this stage
+			}
+			if err != nil {
+				return choice, err
+			}
+			cfgModel.API = shape
+			stage++
+
+		case stageLogin:
+			if !applies(stage) {
+				stage++
+				continue
+			}
+			// A subscription, OAuth or device-code row that Relay can perform,
+			// it performs — see codex.go. What it will not do is walk the user
+			// through somebody else's login and then ask which environment
+			// variable holds the key, because for a subscription there is no
+			// key to hold.
+			body := fmt.Sprintf("%s is %s's own login, not ours. Run it in another terminal now — "+
+				"on a headless box this is the slow part of setup, and it is one device-code flow "+
+				"at a time.", auth.Label, vendor.Label)
+			if cmd, ok := loginCommands[auth.ID]; ok {
+				body += fmt.Sprintf("\n\n    %s\n", cmd)
+			} else {
+				body += "\n\nRelay does not ship the exact command for this one, because a wrong " +
+					"command is worse than none. Use the vendor's documented login."
+			}
+			body += "\nThen tell Relay how to reach the credential it leaves behind — usually an " +
+				"environment variable or a file it writes."
+			_, err := p.Confirm(Confirm{
+				ID: "models." + role + ".login", Prompt: "Signed in?", Body: body,
+				Default: true, Back: true,
+			})
+			if errors.Is(err, ErrBack) {
+				stage = back(stage)
+				continue
+			}
+			if err != nil {
+				return choice, err
+			}
+			stage++
+
+		case stageModelID:
+			// An auth method that serves its own catalog names its own default:
+			// the subscription endpoint does not answer to platform model ids,
+			// so inheriting the vendor's would be a 404 dressed up as a bad
+			// login.
+			modelDefault := defaultModelFor(vendor, defaultModel)
+			if auth.Model != "" {
+				modelDefault = auth.Model
+			}
+			// The budget alternative is named on the question that decides the
+			// bill, and only for the role where the bill is decided. It is one
+			// line, and it is not a menu: the default is a real recommendation,
+			// and this is the one fact a user needs to overrule it on purpose
+			// rather than by accident.
+			var modelBody string
+			if role == "big" && modelDefault == llm.BigModelDefault {
+				modelBody = "Cheaper: " + llm.BudgetModelDefault + " — about 6× less, and not far behind."
+			}
+			modelID, err := p.Input(Input{
+				ID: "models." + role + ".model", Prompt: "Model id",
+				Body: modelBody, Default: modelDefault, Back: true,
+			})
+			if errors.Is(err, ErrBack) {
+				stage = back(stage)
+				continue
+			}
+			if err != nil {
+				return choice, err
+			}
+			cfgModel.Model = modelID
+			stage++
+
+		case stageCredential:
+			// Re-entered after a back, so it starts from nothing rather than
+			// carrying an answer the user has since walked away from.
+			cfgModel.Credential = ""
+			choice.Warnings = nil
+
+			// One key covers both models when the vendor and the sign-in match,
+			// which is exactly the OpenRouter argument, so offer it rather than
+			// asking twice. Matching on the auth method and not just the vendor:
+			// a ChatGPT login and an OpenAI API key are the same vendor and not
+			// the same credential, and reusing one as the other is a 401.
+			if prior != nil && prior.Auth.ID == auth.ID && prior.Model.Credential != "" &&
+				auth.Ref != llm.RefCodex {
+				yes, err := p.Confirm(Confirm{
+					ID:      "models." + role + ".reuse",
+					Prompt:  fmt.Sprintf("Use the same %s credential as the %s model?", vendor.Label, prior.Role),
+					Default: true, Back: true,
+				})
+				if errors.Is(err, ErrBack) {
+					stage = back(stage)
+					continue
+				}
+				if err != nil {
+					return choice, err
+				}
+				if yes {
+					cfgModel.Credential = prior.Model.Credential
+					stage++
+					continue
+				}
+			}
+
+			// A subscription row does not end in a credential question. It ends
+			// in a sign-in, or in reading one that already exists — on this
+			// machine, or from earlier in this run.
+			if auth.Ref == llm.RefCodex {
+				out, err := chooseCodexCredential(ctx, opts, "models."+role+".chatgpt", auth, true)
+				switch {
+				case errors.Is(err, ErrBack):
+					stage = back(stage)
+					continue
+				case errors.Is(err, errCredentialSkipped):
+					choice.Warnings = append(choice.Warnings,
+						fmt.Sprintf("the %s model has no ChatGPT login, so the orchestrator cannot use it yet", role))
+				case err != nil:
+					return choice, err
+				default:
+					cfgModel.Credential = out.Ref.String()
+					opts.rememberCodex(out)
+					choice.Account = out.Account
+					if out.Source == "run" {
+						p.Say("  Using the ChatGPT login from earlier in this run: %s.", out.Account)
+					} else {
+						p.Say("  Signed in as %s.", out.Account)
+					}
+				}
+				stage++
+				continue
+			}
+
 			ref, err := askCredential(ctx, opts, CredentialAsk{
 				ID:      "models." + role + ".cred",
 				Service: "models",
 				Label:   vendor.Label,
 				EnvHint: envVarFor(vendor),
+				Back:    true,
 			})
 			switch {
+			case errors.Is(err, ErrBack):
+				stage = back(stage)
+				continue
 			case errors.Is(err, errCredentialSkipped):
 				choice.Warnings = append(choice.Warnings,
 					fmt.Sprintf("the %s model has no credential, so the orchestrator cannot use it yet", role))
@@ -371,8 +501,10 @@ func chooseModel(ctx context.Context, opts Options, role, why, defaultModel stri
 			default:
 				cfgModel.Credential = ref.String()
 			}
+			stage++
 		}
 	}
+	choice.Auth = auth
 	choice.Model = cfgModel
 
 	// One real call, before the installer exits.

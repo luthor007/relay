@@ -212,3 +212,76 @@ func TestChatGPTRowSwitchesEndpointAndWire(t *testing.T) {
 		}
 	}
 }
+
+// Two models, one ChatGPT account, one sign-in.
+//
+// Signing in is the slowest thing in the install — a code typed on a phone, a
+// browser round trip — and the second model is normally the same account as the
+// first. Asking twice is asking the user to redo the slow part to arrive where
+// they already were.
+func TestTheSecondModelDoesNotSignInAgain(t *testing.T) {
+	answers := codexAnswers()
+	answers["models.small.chatgpt.how"] = "device"
+	answers["models.big.vendor"] = "openai"
+	answers["models.big.auth"] = "openai-codex"
+	answers["models.big.model"] = ""
+	// Empty means "press return", so this asserts the default is the login the
+	// run already has rather than another device flow.
+	answers["models.big.chatgpt.how"] = ""
+	delete(answers, "models.big.cred.kind")
+	delete(answers, "models.big.cred.env")
+
+	access := codexJWT(t, "someone@example.com", "plus", "acct-9", time.Now().Add(time.Hour))
+	var logins int
+	opts, script, _ := newOpts(t, answers, func(o *Options) {
+		o.Vault = &fakeVault{}
+		o.ReadCodexAuth = func(llm.CodexOptions) (llm.CodexAuth, error) {
+			return llm.CodexAuth{}, fmt.Errorf("no login here")
+		}
+		o.CodexDeviceLogin = func(ctx context.Context, show func(llm.CodexDevicePrompt) error) (llm.CodexTokens, error) {
+			logins++
+			if err := show(llm.CodexDevicePrompt{
+				URL: "https://auth.openai.com/codex/device", Code: "ABCD-EFGH",
+				Expires: time.Now().Add(15 * time.Minute),
+			}); err != nil {
+				return llm.CodexTokens{}, err
+			}
+			return llm.CodexTokens{Access: access, Refresh: "refresh-xyz", Expires: time.Now().Add(time.Hour)}, nil
+		}
+	})
+	res, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, script.Output())
+	}
+
+	if logins != 1 {
+		t.Errorf("signed in %d times for one account", logins)
+	}
+	small := res.Models.Small.Model.Credential
+	big := res.Models.Big.Model.Credential
+	if small == "" || big != small {
+		t.Errorf("big model credential = %q, small = %q — want the same login", big, small)
+	}
+	// And it says which login it used, rather than silently reusing one.
+	if out := script.Output(); !strings.Contains(out, "from earlier in this run") {
+		t.Errorf("the reused login is not named:\n%s", out)
+	}
+}
+
+// A ChatGPT login and an OpenAI API key are the same vendor and not the same
+// credential. Offering to reuse one as the other produces a 401 three questions
+// later, in a place that reads like a bad key.
+func TestALoginIsNotOfferedAsAnAPIKey(t *testing.T) {
+	answers := codexAnswers() // small: ChatGPT. big: OpenRouter key.
+	answers["models.small.chatgpt.how"] = "cli"
+
+	opts, script, _ := newOpts(t, answers, withCodexLogin(t))
+	if _, err := Run(context.Background(), opts); err != nil {
+		t.Fatalf("%v\n%s", err, script.Output())
+	}
+	for _, id := range script.Asked {
+		if id == "models.big.reuse" {
+			t.Error("offered a ChatGPT login as the credential for a different sign-in")
+		}
+	}
+}

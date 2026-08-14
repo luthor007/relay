@@ -40,23 +40,46 @@ type codexOutcome struct {
 }
 
 // chooseCodexCredential runs a ChatGPT sign-in row to a credential reference.
-func chooseCodexCredential(ctx context.Context, opts Options, id string, auth llm.Auth) (codexOutcome, error) {
+//
+// back is whether there is a previous question to return to. See [ErrBack].
+func chooseCodexCredential(ctx context.Context, opts Options, id string, auth llm.Auth, back bool) (codexOutcome, error) {
 	p := opts.Prompt
 
 	existing, found := detectCodexLogin(opts)
 
-	choices := make([]Choice, 0, 4)
+	choices := make([]Choice, 0, 5)
 	def := "device"
+
+	// A sign-in this run already did. It is offered first and by default: the
+	// second model is normally the same account as the first, and typing a
+	// device code twice for one account is the install asking the user to
+	// repeat its slowest step to arrive where they already were.
+	//
+	// A login read from the Codex CLI is not offered twice — the row below says
+	// the same thing about the same file, in the words of where it came from.
+	prior, hasPrior := opts.recallCodex()
+	if hasPrior && prior.Source != "cli" {
+		choices = append(choices, Choice{
+			ID:          "run",
+			Label:       "Use the ChatGPT login from a moment ago",
+			Hint:        prior.Account + " — signed in earlier in this run",
+			Recommended: true,
+		})
+		def = "run"
+	}
+
 	if found {
 		choices = append(choices, Choice{
 			ID:    "cli",
 			Label: "Use the ChatGPT login already on this machine",
 			Hint: fmt.Sprintf("%s, from %s — Relay reads it at the moment of use and never copies it",
 				existing.Account(), shortSource(existing.Source, opts.Env.Home)),
-			Recommended: true,
+			Recommended: !hasPrior,
 		})
-		def = "cli"
-	} else if auth.Kind == llm.AuthOAuth {
+		if !hasPrior {
+			def = "cli"
+		}
+	} else if !hasPrior && auth.Kind == llm.AuthOAuth {
 		def = "browser"
 	}
 	choices = append(choices,
@@ -85,7 +108,7 @@ func chooseCodexCredential(ctx context.Context, opts Options, id string, auth ll
 
 	kind, err := p.Select(Question{
 		ID: id + ".how", Title: "ChatGPT sign-in", Body: body,
-		Choices: choices, Default: def,
+		Choices: choices, Default: def, Back: back,
 	})
 	if err != nil {
 		return codexOutcome{}, err
@@ -94,6 +117,13 @@ func chooseCodexCredential(ctx context.Context, opts Options, id string, auth ll
 	switch kind {
 	case "skip":
 		return codexOutcome{}, errCredentialSkipped
+
+	case "run":
+		// Same reference, marked as reused so the caller says so rather than
+		// printing "Signed in as ..." about a sign-in that did not happen.
+		reused := prior
+		reused.Source = "run"
+		return reused, nil
 
 	case "cli":
 		// The reference spells out CODEX_HOME rather than defaulting to it, so a

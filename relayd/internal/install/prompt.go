@@ -2,6 +2,7 @@ package install
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,6 +21,15 @@ import (
 // that meets an id it has no answer for fails rather than guessing, so adding a
 // question to the flow without deciding what a test should say about it breaks
 // the build instead of silently taking a default.
+
+// ErrBack is what a question returns when the user asked to go back to the
+// previous one instead of answering it.
+//
+// A question only offers it when its Back field is set, because a step that
+// cannot unwind must not be able to receive this: an unhandled ErrBack would
+// end the run at the exact moment the user asked for a smaller correction than
+// that. Callers that set Back handle it.
+var ErrBack = errors.New("install: go back")
 
 // Choice is one row of a menu.
 type Choice struct {
@@ -51,6 +61,8 @@ type Question struct {
 	Choices []Choice
 	// Default is the choice id taken when the user just presses return.
 	Default string
+	// Back offers a way back to the previous question. See [ErrBack].
+	Back bool
 }
 
 // ordered returns the choices with Last rows at the bottom, order otherwise
@@ -76,6 +88,8 @@ type Confirm struct {
 	Prompt  string
 	Body    string
 	Default bool
+	// Back offers a way back to the previous question. See [ErrBack].
+	Back bool
 }
 
 // Input is a free-text question.
@@ -90,6 +104,10 @@ type Input struct {
 	Secret bool
 	// Optional allows an empty answer.
 	Optional bool
+	// Back offers a way back to the previous question. See [ErrBack]. It is
+	// never set on a secret, where a short answer is a short key and not a word
+	// with a meaning.
+	Back bool
 }
 
 // Prompter is the installer's whole interface to a human.
@@ -184,6 +202,11 @@ func (t *Terminal) Select(q Question) (string, error) {
 			fmt.Fprintf(t.w(), "      ! %s\n", c.Risk)
 		}
 	}
+	if q.Back {
+		// A row rather than a footnote: it is one of the things that can be
+		// chosen here, and it is discovered the same way the others are.
+		fmt.Fprintf(t.w(), "   b. Go back\n")
+	}
 	def := q.Default
 	if def == "" && len(choices) > 0 {
 		def = choices[0].ID
@@ -204,6 +227,9 @@ func (t *Terminal) Select(q Question) (string, error) {
 		if line == "" {
 			return def, nil
 		}
+		if q.Back && isBack(line) {
+			return "", ErrBack
+		}
 		if n, err := strconv.Atoi(line); err == nil && n >= 1 && n <= len(choices) {
 			return choices[n-1].ID, nil
 		}
@@ -222,13 +248,20 @@ func (t *Terminal) Confirm(c Confirm) (bool, error) {
 	if c.Default {
 		suffix = "[Y/n]"
 	}
+	if c.Back {
+		suffix = strings.TrimSuffix(suffix, "]") + "/b]"
+	}
 	for {
 		fmt.Fprintf(t.w(), "%s %s > ", c.Prompt, suffix)
 		line, err := t.readLine()
 		if err != nil {
 			return false, err
 		}
-		switch strings.ToLower(strings.TrimSpace(line)) {
+		answer := strings.ToLower(strings.TrimSpace(line))
+		if c.Back && isBack(answer) {
+			return false, ErrBack
+		}
+		switch answer {
 		case "":
 			return c.Default, nil
 		case "y", "yes":
@@ -243,11 +276,15 @@ func (t *Terminal) Input(in Input) (string, error) {
 	if in.Body != "" {
 		fmt.Fprintf(t.w(), "%s\n", wrap(in.Body, 76))
 	}
+	back := ""
+	if in.Back {
+		back = " (b to go back)"
+	}
 	for {
 		if in.Default != "" {
-			fmt.Fprintf(t.w(), "%s [%s] > ", in.Prompt, in.Default)
+			fmt.Fprintf(t.w(), "%s [%s]%s > ", in.Prompt, in.Default, back)
 		} else {
-			fmt.Fprintf(t.w(), "%s > ", in.Prompt)
+			fmt.Fprintf(t.w(), "%s%s > ", in.Prompt, back)
 		}
 		var line string
 		var err error
@@ -260,6 +297,9 @@ func (t *Terminal) Input(in Input) (string, error) {
 			return "", err
 		}
 		line = strings.TrimSpace(line)
+		if in.Back && isBack(line) {
+			return "", ErrBack
+		}
 		if line == "" {
 			if in.Default != "" {
 				return in.Default, nil
@@ -296,6 +336,15 @@ func (t *Terminal) readSecret() (string, error) {
 	}
 	fmt.Fprintf(t.w(), "\n  (not a terminal: this will be echoed) ")
 	return t.readLine()
+}
+
+// isBack recognises the two spellings, and only where a question offered them.
+func isBack(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "b", "back":
+		return true
+	}
+	return false
 }
 
 // wrap breaks a paragraph at width, preserving blank lines.
@@ -392,6 +441,9 @@ func (s *Script) Select(q Question) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if q.Back && isBack(v) {
+		return "", ErrBack
+	}
 	if v == "" {
 		v = q.Default
 	}
@@ -409,6 +461,9 @@ func (s *Script) Confirm(c Confirm) (bool, error) {
 	v, err := s.answer(c.ID)
 	if err != nil {
 		return false, err
+	}
+	if c.Back && isBack(v) {
+		return false, ErrBack
 	}
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "", "default":
@@ -429,6 +484,9 @@ func (s *Script) Input(in Input) (string, error) {
 	v, err := s.answer(in.ID)
 	if err != nil {
 		return "", err
+	}
+	if in.Back && isBack(v) {
+		return "", ErrBack
 	}
 	if v == "" {
 		return in.Default, nil
