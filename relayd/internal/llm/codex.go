@@ -47,9 +47,6 @@ const (
 	// borrowing the client OpenAI ships, exactly as OpenClaw does.
 	CodexClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
-	// CodexAuthBase is where tokens are minted and refreshed.
-	CodexAuthBase = "https://auth.openai.com"
-
 	// CodexBaseURL is the only endpoint that accepts a subscription bearer. It
 	// speaks the Responses API, not chat completions — see codexwire.go.
 	CodexBaseURL = "https://chatgpt.com/backend-api/codex"
@@ -72,6 +69,14 @@ const (
 	// one extra refresh and being wrong in the other costs a failed call.
 	codexFallbackLifetime = 45 * time.Minute
 )
+
+// CodexAuthBase is where tokens are minted and refreshed.
+//
+// A variable rather than a constant so a test can point the refresh at a server
+// it controls. Nothing in the daemon writes it; the alternative is a rotation
+// path that can only be exercised against OpenAI, which is how it went untested
+// long enough to ship a hook that nothing ever called.
+var CodexAuthBase = "https://auth.openai.com"
 
 // CodexAuth is what the Codex CLI left behind, normalised.
 type CodexAuth struct {

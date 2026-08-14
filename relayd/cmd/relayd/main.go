@@ -27,6 +27,7 @@ import (
 	"github.com/luthor007/relay/relayd/internal/audit"
 	"github.com/luthor007/relay/relayd/internal/bus"
 	"github.com/luthor007/relay/relayd/internal/config"
+	"github.com/luthor007/relay/relayd/internal/llm"
 	"github.com/luthor007/relay/relayd/internal/logx"
 	"github.com/luthor007/relay/relayd/internal/orchestrator"
 	"github.com/luthor007/relay/relayd/internal/pairing"
@@ -211,6 +212,12 @@ func run(ctx context.Context, args []string, ready func(net.Addr)) error {
 	} else {
 		defer v.Close()
 		secrets, credentials = v, v
+		// A ChatGPT refresh token is spent the moment it is used: OpenAI hands
+		// back a new one and invalidates the old. Without this the daemon would
+		// refresh once, keep the replacement in memory, and present the spent
+		// one after every restart — which is exactly what a user hit, as
+		// "refresh_token_reused" on a login that had worked yesterday.
+		llm.CodexPersist = vault.RotateCodex(v)
 	}
 
 	// Every credential and connector mutation, on disk, displayed by the console

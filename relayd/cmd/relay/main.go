@@ -39,6 +39,7 @@ import (
 	"github.com/luthor007/relay/relayd/internal/config"
 	"github.com/luthor007/relay/relayd/internal/detect"
 	"github.com/luthor007/relay/relayd/internal/install"
+	"github.com/luthor007/relay/relayd/internal/llm"
 	"github.com/luthor007/relay/relayd/internal/pairing"
 	"github.com/luthor007/relay/relayd/internal/search"
 	"github.com/luthor007/relay/relayd/internal/store"
@@ -231,6 +232,12 @@ func (g globals) options(ctx context.Context, out io.Writer) (install.Options, e
 	// re-asks for all of them and the user is told only that they were asked.
 	if v, err := openVault(ctx, cfg); err == nil {
 		opts.Vault = v
+		// See vault.RotateCodex: a refresh token that rotates and is not
+		// written back leaves the vault holding a spent one, and this process
+		// is where a ChatGPT login is created and first used.
+		if r, ok := v.(vault.Rotatable); ok {
+			llm.CodexPersist = vault.RotateCodex(r)
+		}
 	} else {
 		fmt.Fprintf(out, "  Relay's vault did not open: %v\n"+
 			"  Credentials kept in it cannot be read, so this run will ask for them again.\n", err)
