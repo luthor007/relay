@@ -406,16 +406,26 @@ func TestRelaysKeyStaysRelaysAndTheOnboardIsOneOpenClawAccepts(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, argv)
 		}
 	}
-	// Their onboarding registers and starts the service, so Relay does not have
-	// to do it a second time.
-	if !strings.Contains(argv, "--install-daemon") {
-		t.Errorf("the Gateway was configured but never registered to run:\n%s", argv)
+	// And it is configured without being started or registered. Nothing in
+	// relayd dials this Gateway yet, and its default policy runs a harness's
+	// tool calls without asking anyone — an always-on process with that
+	// property, doing nothing for anybody, is worth refusing.
+	for _, want := range []string{"--skip-daemon", "--skip-health"} {
+		if !strings.Contains(argv, want) {
+			t.Errorf("missing %q, so setup starts a Gateway nothing uses:\n%s", want, argv)
+		}
 	}
-	if !res.Bus.Live || !res.Bus.Registered {
-		t.Errorf("bus = %+v, want live and registered", res.Bus)
+	if strings.Contains(argv, "--install-daemon") {
+		t.Errorf("registered a Gateway nothing dials to start at boot:\n%s", argv)
+	}
+	if res.Bus.Live || res.Bus.Registered {
+		t.Errorf("bus = %+v, want configured and left alone", res.Bus)
 	}
 	if _, called := busRan(ex, "gateway install"); called {
-		t.Error("the service was installed twice: once by onboard, once by Relay")
+		t.Error("the service was installed anyway")
+	}
+	if _, called := busRan(ex, "gateway start"); called {
+		t.Error("a fresh install was started; nothing uses it")
 	}
 }
 
@@ -689,21 +699,23 @@ func TestAWrittenConfigOutranksTheOnboardExitCode(t *testing.T) {
 	if res.Bus.Live {
 		t.Errorf("bus = %+v, want configured and not yet running", res.Bus)
 	}
-	if !strings.Contains(res.Bus.Line(), "not answering") {
+	if !strings.Contains(res.Bus.Line(), "not started") {
 		t.Errorf("summary = %q, which reads as working", res.Bus.Line())
 	}
 }
 
 // A config file is a plan. The port is the fact, and it is asked for rather
 // than assumed — on the port their own config names.
+//
+// This is the adopt path: a Gateway somebody already set up. Relay checks it,
+// because a Gateway that is already theirs is worth reporting on. A fresh
+// install is not started at all, so there is nothing there to check.
 func TestTheGatewayIsHealthCheckedNotAssumed(t *testing.T) {
 	gw := &busGateway{}
 	answers := baseAnswers()
-	answers["bus.ack"] = "yes"
-	answers["bus.install"] = "yes"
 	answers["bus.repair"] = "continue"
 	opts, script, _ := newOpts(t, answers, func(o *Options) {
-		busEnv(t, "v24.19.0", false)(o)
+		busEnv(t, "v24.19.0", true)(o)
 		gw.attach(o)
 	})
 	res, err := Run(context.Background(), opts)
@@ -739,11 +751,9 @@ func TestTheGatewayIsHealthCheckedNotAssumed(t *testing.T) {
 func TestAStartThatDidNotTakeIsOfferedAgain(t *testing.T) {
 	gw := &busGateway{}
 	answers := baseAnswers()
-	answers["bus.ack"] = "yes"
-	answers["bus.install"] = "yes"
 	answers["bus.repair"] = "fix"
 	opts, script, _ := newOpts(t, answers, func(o *Options) {
-		busEnv(t, "v24.19.0", false)(o)
+		busEnv(t, "v24.19.0", true)(o)
 		gw.attach(o)
 		// launchd bootstrapped it and the process died on the first go, which
 		// is what a service that "installed fine" and never bound the port
@@ -895,5 +905,50 @@ func TestTheProfileReachesEveryGatewayCommand(t *testing.T) {
 	}
 	if seen == 0 {
 		t.Fatal("no openclaw command ran at all")
+	}
+}
+
+// Nothing dials this Gateway, so nothing starts it.
+//
+// internal/gateway is imported by nothing and config.Bus is validated on load
+// and never read: relayd runs Claude Code and Codex through internal/adapter,
+// which is also the only path that can ask a human before a command runs.
+// Registering an always-on process that runs a harness's tool calls without
+// asking anyone, to serve a client that does not exist, is the one outcome this
+// step should refuse.
+func TestAFreshGatewayIsConfiguredAndLeftAlone(t *testing.T) {
+	gw := &busGateway{}
+	answers := baseAnswers()
+	answers["bus.ack"] = "yes"
+	answers["bus.install"] = "yes"
+	opts, script, _ := newOpts(t, answers, func(o *Options) {
+		busEnv(t, "v24.19.0", false)(o)
+		gw.attach(o)
+	})
+	res, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, script.Output())
+	}
+	if !res.Bus.Configured {
+		t.Fatalf("bus = %+v, want configured", res.Bus)
+	}
+	if res.Bus.Registered || res.Bus.Live {
+		t.Errorf("bus = %+v, want it left stopped", res.Bus)
+	}
+	// Not even a health check: there is nothing running to answer one, and
+	// asking would only produce a connection refused to explain.
+	if len(gw.URLs) != 0 {
+		t.Errorf("called %v on a Gateway this run deliberately did not start", gw.URLs)
+	}
+	// The summary must not read as a working bus.
+	if line := res.Bus.Line(); !strings.Contains(line, "not started") {
+		t.Errorf("summary = %q", line)
+	}
+	// And the user is told why, in the step, rather than left to infer it.
+	out := script.Output()
+	for _, want := range []string{"does not use it yet", "Configured, and not started"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the step never says %q:\n%s", want, out)
+		}
 	}
 }

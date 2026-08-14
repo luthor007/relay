@@ -112,8 +112,8 @@ func (b BusOutcome) Line() string {
 	case b.Configured:
 		// Said this way round on purpose. "Configured" alone read as working,
 		// and the whole point of the health check is that it is not the same
-		// claim.
-		return "OpenClaw " + b.Version + " — configured, but not answering"
+		// claim. It is not started either, on purpose — see chooseBus step 6.
+		return "OpenClaw " + b.Version + " — configured, not started; Relay drives Claude Code and Codex directly"
 	case b.Present:
 		return "OpenClaw " + b.Version + " — present, not configured"
 	}
@@ -221,13 +221,26 @@ const busAck = `The Gateway runs agents on this machine with your account's perm
 	`shell, your files, your repos.
 
 Anything reaching it can ask an agent to act. It listens on loopback only, and Relay pairs ` +
-	`your phone to itself rather than to it.`
+	`your phone to itself rather than to it.
+
+It also cannot ask you anything. Driven through the Gateway, Claude Code runs with ` +
+	`permissions bypassed or denied outright — measured, not assumed — while Relay's own path ` +
+	`stops and asks you before a command runs. So Relay does not route work through it, and ` +
+	`installing it now changes nothing about how your agents run.`
 
 func chooseBus(ctx context.Context, opts Options, rep detect.Report, models ModelsOutcome) (BusOutcome, error) {
 	p := opts.Prompt
 	var out BusOutcome
 
-	p.Section("The agent bus", "OpenClaw's Gateway runs the agent sessions. Relay drives it.")
+	// The heading used to say "OpenClaw's Gateway runs the agent sessions. Relay
+	// drives it." Relay does not: internal/gateway is imported by nothing and
+	// config.Bus is validated on load and never read. relayd runs Claude Code
+	// and Codex through internal/adapter, which is also the only path that can
+	// ask a human before a command runs.
+	p.Section("The agent bus",
+		"OpenClaw's Gateway can drive seventeen agent harnesses. Relay does not use it yet — "+
+			"it runs Claude Code and Codex directly, which is the only path that stops to ask "+
+			"you before a command runs.")
 
 	// 1. What is here?
 	found, _ := rep.Get(adapter.OpenClaw)
@@ -304,8 +317,13 @@ func chooseBus(ctx context.Context, opts Options, rep detect.Report, models Mode
 		return out, nil
 	}
 
-	// 6. And prove it runs, because a config file is a plan.
-	return busServe(ctx, opts, out)
+	// 6. And stop there. Step 6 used to start it and prove it answered, which
+	// was the right shape when the plan was for relayd to dial it. Until
+	// something does, starting it buys an idle daemon and costs a process that
+	// executes tool calls without asking anyone.
+	opts.Prompt.Say("  %s", wrapIndent("Configured, and not started: nothing in Relay dials it "+
+		"yet. `openclaw gateway install` runs it at boot when you want it.", 2, 76))
+	return out, nil
 }
 
 func busInstall(ctx context.Context, opts Options, out *BusOutcome) error {
@@ -412,15 +430,15 @@ func busOnboard(ctx context.Context, opts Options, auth busAuth, out *BusOutcome
 		"--skip-channels", "--skip-skills", "--skip-ui", "--skip-search",
 		"--gateway-auth", "token", "--gateway-bind", "loopback",
 	}
-	// `relay setup --no-service` is a decision about what this machine starts
-	// at boot, and the Gateway is something this machine would start at boot.
-	// Without the flag their onboarding installs the service and waits for it,
-	// which is the whole of step 6 done by the tool that owns it.
-	if opts.SkipService {
-		args = append(args, "--skip-daemon", "--skip-health")
-	} else {
-		args = append(args, "--install-daemon")
-	}
+	// Configured, not started, and not registered at boot.
+	//
+	// Nothing in relayd dials this Gateway yet, and its default policy runs a
+	// harness's tool calls without asking anyone. An always-on process with
+	// that property, doing nothing for anybody, is the one state worth
+	// refusing: the config is written so the day relayd drives it is a restart
+	// and not a reinstall, and `openclaw gateway install` turns it on for
+	// somebody who wants it now.
+	args = append(args, "--skip-daemon", "--skip-health")
 	// `claude-cli` is rejected as deprecated; the live name is `anthropic-cli`.
 	// The key, where there is one, travels in the environment — argv is
 	// world-readable on Linux and a credential has no business in `ps`.
@@ -456,6 +474,7 @@ func busOnboard(ctx context.Context, opts Options, auth busAuth, out *BusOutcome
 		return
 	}
 	out.Configured = true
+	out.Registered = false
 	if auth.Choice != "skip" {
 		out.AgentAuth = auth.Choice
 	}
@@ -469,10 +488,6 @@ func busOnboard(ctx context.Context, opts Options, auth busAuth, out *BusOutcome
 		out.Warnings = append(out.Warnings, w)
 		opts.Prompt.Say("  %s", wrapIndent(w+".", 2, 76))
 	}
-	// A clean exit with --install-daemon means their own daemon-install and
-	// health phases both passed, which is the only evidence of boot
-	// registration this step gets for free.
-	out.Registered = err == nil && res.Code == 0 && !opts.SkipService
 	if auth.Label != "" {
 		opts.Prompt.Say("  Gateway configured, on loopback, with %s.", auth.Label)
 	} else {
