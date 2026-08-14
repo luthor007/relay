@@ -131,4 +131,13 @@ func TestABrokenStoredCredentialIsNotKept(t *testing.T) {
 			t.Errorf("offered to keep %q without a call that proved it", id)
 		}
 	}
+	// And it says why it is asking again. A second run that re-asks the whole
+	// model question with no explanation reads as an installer that forgot —
+	// which is exactly how this looked from the outside.
+	out := script.Output()
+	for _, want := range []string{"already configured here, and did not answer"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("re-asked silently, without saying why:\n%s", out)
+		}
+	}
 }

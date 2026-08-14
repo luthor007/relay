@@ -224,8 +224,16 @@ func (g globals) options(ctx context.Context, out io.Writer) (install.Options, e
 	}
 	// The vault is optional: it is what makes "type it now" available, and
 	// without it a typed secret is refused rather than written to a file.
+	//
+	// Its failure used to be swallowed, which is the worst way for this
+	// particular thing to fail: every credential stored as `vault:<id>` — a
+	// ChatGPT sign-in, a typed API key — then resolves to nothing, so setup
+	// re-asks for all of them and the user is told only that they were asked.
 	if v, err := openVault(ctx, cfg); err == nil {
 		opts.Vault = v
+	} else {
+		fmt.Fprintf(out, "  Relay's vault did not open: %v\n"+
+			"  Credentials kept in it cannot be read, so this run will ask for them again.\n", err)
 	}
 	// The index is optional too, and for a sharper reason: opening it would
 	// CREATE it, and a `relay doctor` that leaves a database behind on a box

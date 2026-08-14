@@ -3,6 +3,7 @@ package install
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/luthor007/relay/relayd/internal/config"
 	"github.com/luthor007/relay/relayd/internal/llm"
@@ -69,6 +70,11 @@ func keptVoice(ctx context.Context, opts Options) (VoiceOutcome, bool, error) {
 		}
 	}
 	if !primary.Probed || !primary.OK() {
+		say := opt.Label + " is already configured here, and did not answer just now"
+		if d := strings.TrimSpace(primary.Detail); d != "" {
+			say += ": " + d
+		}
+		opts.Prompt.Say("  %s.", wrapIndent(say, 2, 76))
 		return VoiceOutcome{}, false, nil
 	}
 
@@ -112,8 +118,17 @@ func keptModel(ctx context.Context, opts Options, role string) (ModelChoice, boo
 	choice := ModelChoice{Role: role, Vendor: vendor, Model: cur}
 	choice.Probe, choice.Probed = probeModel(ctx, opts, cur)
 	if !choice.OK() {
-		// Broken, or unreachable from here. The step runs properly and the
-		// repair loop explains it.
+		// Broken, or unreachable from here. Say which, because the alternative
+		// is what this looked like from the outside: a second run asking the
+		// whole model question again with no explanation, on a machine where
+		// the answer was already on disk. A silent fall-through reads as the
+		// installer having forgotten.
+		say := cur.Model + " on " + vendor.Label + " is already configured here, and did not " +
+			"answer just now"
+		if d := strings.TrimSpace(choice.Probe.Detail); d != "" {
+			say += ": " + d
+		}
+		opts.Prompt.Say("  %s.", wrapIndent(say, 2, 76))
 		return ModelChoice{}, false, nil
 	}
 
