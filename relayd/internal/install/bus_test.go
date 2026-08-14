@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/luthor007/relay/relayd/internal/config"
 	"github.com/luthor007/relay/relayd/internal/detect"
 )
 
@@ -520,46 +521,95 @@ func TestClaudeCodeInstalledButNotSignedInStillGetsAGateway(t *testing.T) {
 	}
 }
 
-// Signing in during the step, rather than being told to do it afterwards.
+// Signed in, and told they were not.
 //
-// `claude` is an interactive login that Relay cannot drive through a pipe, so
-// the honest shape is: say the command, wait, then look at the one file that
-// decides it.
-func TestSigningInToClaudeDuringTheStepBindsTheRuntime(t *testing.T) {
-	gw := &busGateway{}
-	answers := baseAnswers()
-	answers["bus.ack"] = "yes"
-	answers["bus.install"] = "yes"
-	answers["bus.auth"] = "claude"
-	answers["bus.claude.login"] = "yes"
+// A real machine, after a successful `claude` login in another terminal:
+//
+//	Signed in? [Y/n] > Y
+//	  No Claude Code login here yet.
+//
+// Claude Code on macOS keeps its login in the Keychain. The file this check
+// used to be is what it wrote in an older version — on the machine that wrote
+// this test, ~/.claude/.credentials.json exists and expired in June, which is
+// also why an earlier "verified" anthropic-cli run here passed. A machine that
+// has only ever run the current Claude Code has no such file, and the honest
+// answer is that the login exists and OpenClaw's unattended setup cannot read it.
+func TestAKeychainLoginIsRecognisedRatherThanDenied(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "sk-or-"+"v1-"+strings.Repeat("3", 48))
 
-	opts, script, _ := newOpts(t, answers, func(o *Options) {
-		busEnv(t, "v24.19.0", false)(o)
-		gw.attach(o)
-		o.Env.Exec.(*busExec).Hook = func(c detect.Cmd) {
-			if busVerb(c) == "onboard" {
-				gw.up = true
-			}
-		}
-		// The user goes to the other terminal and signs in: by the time they
-		// answer "Signed in?", the file is there.
-		o.Prompt = &loginScript{Script: o.Prompt.(*Script), onAsk: func() {
-			withClaudeCLILogin(t)(o)
-		}}
-	})
-	res, err := Run(context.Background(), opts)
+	fs := &detect.MemFS{}
+	ex := &detect.FakeExec{
+		Paths:     map[string]string{"security": "/usr/bin/security"},
+		Responses: map[string]detect.Result{},
+	}
+	// Signed in, in the Keychain, with no credentials file anywhere.
+	ex.Responses[detect.Key("security", "find-generic-password", "-s", claudeKeychainService)] =
+		detect.Result{Stdout: []byte("class: \"genp\"\n")}
+
+	script := NewScript(map[string]string{"bus.auth": "skip"})
+	opts := Options{
+		Prompt: script, FS: fs,
+		Env: detect.Env{Home: home, GOOS: "darwin", FS: fs, Exec: ex},
+	}.withDefaults()
+
+	models := ModelsOutcome{Big: ModelChoice{Model: config.Model{
+		Vendor: "openrouter", Model: "x-ai/grok-4.6", Credential: "env:OPENROUTER_API_KEY",
+	}}}
+
+	auth, err := chooseBusAuth(context.Background(), opts, true, models)
 	if err != nil {
-		t.Fatalf("%v\n%s", err, script.Output())
+		t.Fatal(err)
 	}
-	cmd, ok := busRan(busExecOf(t, opts), "onboard")
-	if !ok {
-		t.Fatal("the Gateway was never onboarded")
+	// It must not claim the binding: OpenClaw's non-interactive path reads only
+	// the file, so anthropic-cli would be refused.
+	if auth.Choice == "anthropic-cli" {
+		t.Errorf("bound a login the unattended onboard cannot read: %+v", auth)
 	}
-	if argv := argvOf(cmd); !strings.Contains(argv, "--auth-choice anthropic-cli") {
-		t.Errorf("a login made during the step did not bind the runtime:\n%s", argv)
+	out := script.Output()
+	// And it must not tell somebody who is signed in that they are not.
+	if strings.Contains(out, "not signed in") {
+		t.Errorf("told a signed-in user they were not:\n%s", out)
 	}
-	if res.Bus.AgentAuth != "anthropic-cli" {
-		t.Errorf("AgentAuth = %q, want the binding it just made", res.Bus.AgentAuth)
+	if !strings.Contains(out, "Keychain") {
+		t.Errorf("never explains why a working login cannot be used:\n%s", out)
+	}
+}
+
+// The state machine itself, on the three machines it has to tell apart.
+func TestClaudeLoginStates(t *testing.T) {
+	keychain := func(present bool) *detect.FakeExec {
+		ex := &detect.FakeExec{Paths: map[string]string{}, Responses: map[string]detect.Result{}}
+		if present {
+			ex.Paths["security"] = "/usr/bin/security"
+			ex.Responses[detect.Key("security", "find-generic-password", "-s", claudeKeychainService)] =
+				detect.Result{Stdout: []byte("class: \"genp\"\n")}
+		}
+		return ex
+	}
+	for _, tc := range []struct {
+		name string
+		file string
+		keys bool
+		want claudeLogin
+	}{
+		{"nothing at all", "", false, claudeNoLogin},
+		{"the current Claude Code on a Mac", "", true, claudeKeychainOnly},
+		{"a machine that writes the file", `{"claudeAiOauth":{"accessToken":"a"}}`, false, claudeBindable},
+		{"both, file wins because it is the bindable one", `{"claudeAiOauth":{"accessToken":"a"}}`, true, claudeBindable},
+		{"a file Claude Code merely created", `{}`, false, claudeNoLogin},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := &detect.MemFS{Files: map[string]string{}}
+			if tc.file != "" {
+				fs.Files[home+"/"+claudeCLICredentials] = tc.file
+			}
+			opts := Options{Env: detect.Env{
+				Home: home, GOOS: "darwin", FS: fs, Exec: keychain(tc.keys),
+			}}.withDefaults()
+			if got := claudeCLIState(context.Background(), opts); got != tc.want {
+				t.Errorf("state = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -616,20 +666,6 @@ func TestTheGatewayCanBeGivenTheKeyRelayAlreadyHas(t *testing.T) {
 	if res.Bus.AgentAuth != "openrouter-api-key" {
 		t.Errorf("AgentAuth = %q", res.Bus.AgentAuth)
 	}
-}
-
-// loginScript runs a side effect when the sign-in question is asked, which is
-// what a user does: they go to another terminal and come back.
-type loginScript struct {
-	*Script
-	onAsk func()
-}
-
-func (l *loginScript) Confirm(c Confirm) (bool, error) {
-	if c.ID == "bus.claude.login" && l.onAsk != nil {
-		l.onAsk()
-	}
-	return l.Script.Confirm(c)
 }
 
 // busConfigured is the sole judge of whether onboarding worked, so the key it

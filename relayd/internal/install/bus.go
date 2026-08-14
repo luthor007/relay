@@ -380,45 +380,82 @@ func busInstall(ctx context.Context, opts Options, out *BusOutcome) error {
 //	Claude CLI auth on this host.
 //
 // It refuses before writing anything, so a machine that had just installed
-// Claude Code got no Gateway at all. The precondition is now checked here, in
-// the one place OpenClaw's non-interactive path looks — see claudeCLISignedIn —
+// Claude Code got no Gateway at all. The precondition is checked in
+// claudeCLIState now, in the one place OpenClaw's non-interactive path looks,
 // and a machine that does not meet it is onboarded with `--auth-choice skip`,
 // which configures a Gateway with no agent login rather than no Gateway.
-// claudeCLICredentials is where the Claude CLI keeps its login, relative to
-// home. It is the ONLY place OpenClaw's non-interactive onboarding looks.
+// Where the Claude CLI keeps its login, and which half of it OpenClaw can read.
 //
-// Their interactive path reads the macOS Keychain item "Claude Code-credentials"
-// first and falls back to this file; the non-interactive path — the one Relay
-// drives — passes allowKeychainPrompt: false and reads only the file, because a
-// Keychain prompt in an unattended run is a dialog nobody is there to answer.
-// So "signed in" for our purposes means this file, and checking the Keychain
-// here would produce a yes that OpenClaw then answers with a no.
-const claudeCLICredentials = ".claude/.credentials.json"
+// Both places, measured on a real Mac on 2026-08-14:
+//
+//	Keychain "Claude Code-credentials"   the live login
+//	~/.claude/.credentials.json          present, and expired in June
+//
+// Claude Code on macOS writes the Keychain. The file is what it used to write,
+// and a machine that has only ever run the current version does not have one at
+// all — which is what a clean Mac mini looked like after signing in
+// successfully and being told it had not.
+//
+// OpenClaw's interactive path reads the Keychain first and falls back to the
+// file. Its NON-INTERACTIVE path — the one Relay drives — passes
+// allowKeychainPrompt: false and reads only the file, because a Keychain dialog
+// in an unattended run is a question nobody is there to answer. So on macOS
+// `--auth-choice anthropic-cli` is not available to Relay at all, and the
+// earlier "verified" run of it here passed only because of that stale June file.
+//
+// Hence two states rather than one: signed in, and bindable from here.
+const (
+	claudeCLICredentials  = ".claude/.credentials.json"
+	claudeKeychainService = "Claude Code-credentials"
+)
 
-// claudeCLISignedIn reports whether `--auth-choice anthropic-cli` will be
-// accepted, rather than whether Claude Code is installed.
-func claudeCLISignedIn(opts Options) bool {
+type claudeLogin int
+
+const (
+	// claudeNoLogin: no login this machine can show us.
+	claudeNoLogin claudeLogin = iota
+	// claudeKeychainOnly: signed in, and invisible to a non-interactive onboard.
+	claudeKeychainOnly
+	// claudeBindable: signed in, in the file OpenClaw's non-interactive path reads.
+	claudeBindable
+)
+
+// claudeCLIState reports what this machine can prove about a Claude Code login.
+func claudeCLIState(ctx context.Context, opts Options) claudeLogin {
 	home := opts.Env.Home
 	if home == "" {
 		var err error
 		if home, err = os.UserHomeDir(); err != nil {
-			return false
+			return claudeNoLogin
 		}
 	}
 	read := os.ReadFile
 	if opts.Env.FS != nil {
 		read = opts.Env.FS.ReadFile
 	}
-	b, err := read(filepath.Join(home, claudeCLICredentials))
-	if err != nil {
-		return false
+	if b, err := read(filepath.Join(home, claudeCLICredentials)); err == nil {
+		// The file exists on a machine that has merely started Claude Code.
+		// What OpenClaw requires from it is this object.
+		var f struct {
+			OAuth json.RawMessage `json:"claudeAiOauth"`
+		}
+		if json.Unmarshal(b, &f) == nil && len(f.OAuth) > 0 {
+			return claudeBindable
+		}
 	}
-	// The file exists on a machine that has merely started Claude Code. What
-	// OpenClaw requires from it is this object.
-	var f struct {
-		OAuth json.RawMessage `json:"claudeAiOauth"`
+	// Existence only. `security find-generic-password` without -w returns the
+	// item's attributes and does not unlock the secret, so it asks the user for
+	// nothing — which matters in the middle of an installer.
+	if opts.Env.GOOS == "darwin" && opts.Env.Exec != nil {
+		res, err := opts.Env.Exec.Run(ctx, detect.Cmd{
+			Name: "security", Args: []string{"find-generic-password", "-s", claudeKeychainService},
+			Timeout: 10 * time.Second,
+		})
+		if err == nil && res.Code == 0 {
+			return claudeKeychainOnly
+		}
 	}
-	return json.Unmarshal(b, &f) == nil && len(f.OAuth) > 0
+	return claudeNoLogin
 }
 
 func busOnboard(ctx context.Context, opts Options, auth busAuth, out *BusOutcome) {

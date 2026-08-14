@@ -243,8 +243,7 @@ func TestThePathIsOfferedBeforeAnythingSendsYouToAnotherTerminal(t *testing.T) {
 	answers["path.profile"] = "yes"
 	answers["bus.ack"] = "yes"
 	answers["bus.install"] = "yes"
-	answers["bus.auth"] = "claude"
-	answers["bus.claude.login"] = "no"
+	answers["bus.auth"] = "skip"
 
 	opts, script, _ := newOpts(t, answers, func(o *Options) {
 		busEnv(t, "v24.19.0", false)(o)
@@ -268,7 +267,7 @@ func TestThePathIsOfferedBeforeAnythingSendsYouToAnotherTerminal(t *testing.T) {
 			if path < 0 {
 				path = i
 			}
-		case "bus.claude.login":
+		case "bus.ack":
 			if login < 0 {
 				login = i
 			}
@@ -278,10 +277,10 @@ func TestThePathIsOfferedBeforeAnythingSendsYouToAnotherTerminal(t *testing.T) {
 		t.Fatalf("the PATH question was never asked:\n%v", script.Asked)
 	}
 	if login < 0 {
-		t.Skip("this fixture never reached the sign-in question")
+		t.Skip("this fixture never reached the bus step")
 	}
 	if path > login {
-		t.Errorf("asked to open another terminal (%d) before making the command typeable (%d):\n%v",
+		t.Errorf("asked about the bus (%d) before making its commands typeable (%d):\n%v",
 			login, path, script.Asked)
 	}
 }
